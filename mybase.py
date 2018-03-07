@@ -261,21 +261,92 @@ def app_gru (train, test):
     test_text = test["comment_text"]
     list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
     y = train[list_classes].values
-    max_features = 20000
+    max_features = 100000
     max_len = 150
     embed_size = 300
 
-    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, fasttext_embedding_path,max_features = 20000, max_len = 150)
+    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, fasttext_embedding_path,max_features, max_len)
 
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
 
-    file_path = "./model/best_model_gru.hdf5"
+    file_path = "./model/best_model_gru_fast.hdf5"
     model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid, Y_valid, X_train,  Y_train, file_path,
                         m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
-                        m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
-    pred = model.predict(test, batch_size = 1024, verbose = 1)
-    return
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_fast_gru.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, glove_embedding_path,max_features, max_len)
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_gru_glove.hdf5"
+    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_glove_gru.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    max_features = 20000
+    train, test = f_get_tfidf_features(train_text, test_text, f_max_features=max_features, f_type='word')
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_gru_word.hdf5"
+    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=True, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_word_gru.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    train,test = f_get_tfidf_features(train_text, test_text, f_max_features=max_features, f_type='char')
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_gru_char.hdf5"
+    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=True, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_char_gru.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    train,test = f_get_tfidf_features(train_text, test_text, f_max_features=max_features, f_type='shortchar')
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_gru_shortchar.hdf5"
+    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=True, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_shortchar_gru.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    return pred
 
 def app_lstm (train, test):
 
@@ -287,22 +358,97 @@ def app_lstm (train, test):
     max_len = 150
     embed_size = 300
 
-    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, fasttext_embedding_path,max_features = 20000, max_len = 150)
+    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, fasttext_embedding_path,max_features, max_len)
 
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
 
-    file_path = "./model/best_model_lstm.hdf5"
+    file_path = "./model/best_model_lstm_fast.hdf5"
     model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid, Y_valid, X_train,  Y_train, file_path,
                         m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.1,
                         m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
     pred = model.predict(test, batch_size = 1024, verbose = 1)
-    return
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_fast_lstm.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, glove_embedding_path,max_features, max_len)
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_lstm_glove.hdf5"
+    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.1,
+                        m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 1024, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_glove_lstm.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+
+    max_features = 20000
+    train, test = f_get_tfidf_features(train_text, test_text, f_max_features=max_features, f_type='word')
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_lstm_word.hdf5"
+    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=True, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_word_gru.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    train,test = f_get_tfidf_features(train_text, test_text, f_max_features=max_features, f_type='char')
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_lstm_char.hdf5"
+    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=True, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_char_lstm.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+    train,test = f_get_tfidf_features(train_text, test_text, f_max_features=max_features, f_type='shortchar')
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_gru_shortchar.hdf5"
+    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=True, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 32, m_epochs = 4, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
+
+    submission = pd.read_csv("./input/sample_submission.csv")
+    submission[list_classes] = (pred)
+    submission.to_csv("./res/submission_shortchar_lstm.csv", index = False)
+    print("[{}] Completed!".format(time.time() - start_time))
+
+
+    return pred
 
 
 
-# print ("goto app_gru")
-# app_gru(train, test)
+print ("goto app_gru")
+pred = app_gru(train, test)
+
+
 
 print ("goto app_lstm")
 app_lstm(train, test)
