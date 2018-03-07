@@ -181,7 +181,10 @@ def m_gru_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
     early_stop = EarlyStopping(monitor = "val_loss", mode = "min", patience = 5)
 
     inp = Input(shape = (m_max_len,))
-    x = Embedding(m_max_features, m_embed_size, weights = [m_embedding_matrix], trainable = m_trainable)(inp)
+    if m_trainable == True:
+        x = Embedding(m_max_features, m_embed_size)(inp)
+    else:
+        x = Embedding(m_max_features, m_embed_size, weights = [m_embedding_matrix], trainable = m_trainable)(inp)
     x = SpatialDropout1D(dr)(x)
 
     x = Bidirectional(GRU(units, return_sequences = True))(x)
@@ -189,6 +192,44 @@ def m_gru_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
     avg_pool = GlobalAveragePooling1D()(x)
     max_pool = GlobalMaxPooling1D()(x)
     x = concatenate([avg_pool, max_pool])
+
+    x = Dense(6, activation = "sigmoid")(x)
+    model = Model(inputs = inp, outputs = x)
+    model.compile(loss = "binary_crossentropy",
+        optimizer = Adam(lr = lr, decay = lr_d),
+        metrics = ["accuracy"])
+    history = model.fit(X_train, Y_train, batch_size = m_batch_size, epochs = m_epochs, validation_data = (X_valid, Y_valid),
+                        verbose = m_verbose, callbacks = [ra_val, check_point, early_stop])
+    model = load_model(m_file_path)
+    return model
+
+def m_lstm_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
+                X_valid, Y_valid, X_train, Y_train, m_file_path,
+                m_trainable = False,lr = 0.0, lr_d = 0.0, units = 0, dr = 0.0,
+                m_batch_size = 128, m_epochs = 4, m_verbose = 1, ):
+    check_point = ModelCheckpoint(m_file_path, monitor = "val_loss", verbose = 1,
+                                  save_best_only = True, mode = "min")
+    ra_val = RocAucEvaluation(validation_data=(X_valid, Y_valid), interval = 1)
+    early_stop = EarlyStopping(monitor = "val_loss", mode = "min", patience = 5)
+
+    inp = Input(shape = (m_max_len,))
+    if m_trainable == True:
+        x = Embedding(m_max_features, m_embed_size)(inp)
+    else:
+        x = Embedding(m_max_features, m_embed_size, weights = [m_embedding_matrix], trainable = m_trainable)(inp)
+
+    # x = SpatialDropout1D(dr)(x)
+    # x = Bidirectional(LTSM(units, return_sequences = True))(x)
+    # x = Conv1D(64, kernel_size = 2, padding = "valid", kernel_initializer = "he_uniform")(x)
+    # avg_pool = GlobalAveragePooling1D()(x)
+    # max_pool = GlobalMaxPooling1D()(x)
+    # x = concatenate([avg_pool, max_pool])
+
+    x = Bidirectional(LSTM(units, return_sequences=True))(x)
+    x = GlobalMaxPool1D()(x)
+    x = Dropout(dr)(x)
+    x = Dense(50, activation="relu")(x)
+    x = Dropout(dr)(x)
 
     x = Dense(6, activation = "sigmoid")(x)
     model = Model(inputs = inp, outputs = x)
@@ -236,9 +277,35 @@ def app_gru (train, test):
     pred = model.predict(test, batch_size = 1024, verbose = 1)
     return
 
+def app_lstm (train, test):
 
-print ("goto app_gru")
-app_gru(train, test)
+    train_text = train["comment_text"]
+    test_text = test["comment_text"]
+    list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
+    y = train[list_classes].values
+    max_features = 20000
+    max_len = 150
+    embed_size = 300
+
+    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, fasttext_embedding_path,max_features = 20000, max_len = 150)
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    file_path = "./model/best_model_lstm.hdf5"
+    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train, file_path,
+                        m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.1,
+                        m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 1024, verbose = 1)
+    return
+
+
+
+# print ("goto app_gru")
+# app_gru(train, test)
+
+print ("goto app_lstm")
+app_lstm(train, test)
 
 
 """"""""""""""""""""""""""""""
