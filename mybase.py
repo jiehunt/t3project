@@ -80,7 +80,6 @@ glove_embedding_path = "./input/glove.840B.300d.txt"
 train["comment_text"].fillna("no comment")
 test["comment_text"].fillna("no comment")
 
-embed_size = 300
 """"""""""""""""""""""""""""""
 # Feature
 """"""""""""""""""""""""""""""
@@ -174,28 +173,23 @@ def f_get_tfidf_features(f_train_text, f_test_text, f_max_features=10000, f_type
 # f_get_tfidf_features(train['comment_text'], test['comment_text'], f_max_features=50000, f_type='shortchar')
 # print("test char over")
 
-train_text = train["comment_text"]
-test_text = test["comment_text"]
-list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
-y = train[list_classes].values
-max_features = 20000
-max_len = 150
 
-train,test, embedding_matrix = f_get_glove_features(train_text, test_text, max_features = 20000, max_len = 150)
 
-X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+""""""""""""""""""""""""""""""
+# Model
+""""""""""""""""""""""""""""""
+def m_gru_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
+                X_valid, Y_valid, X_train, Y_train,
+                m_trainable = False,lr = 0.0, lr_d = 0.0, units = 0, dr = 0.0,
+                m_batch_size = 128, m_epochs = 4, m_verbose = 1, ):
+    file_path = "./model/best_model_gru.hdf5"
+    check_point = ModelCheckpoint(file_path, monitor = "val_loss", verbose = 1,
+                                  save_best_only = True, mode = "min")
+    ra_val = RocAucEvaluation(validation_data=(X_valid, Y_valid), interval = 1)
+    early_stop = EarlyStopping(monitor = "val_loss", mode = "min", patience = 5)
 
-print(train.shape)
-
-file_path = "best_model.hdf5"
-check_point = ModelCheckpoint(file_path, monitor = "val_loss", verbose = 1,
-                              save_best_only = True, mode = "min")
-ra_val = RocAucEvaluation(validation_data=(X_valid, Y_valid), interval = 1)
-early_stop = EarlyStopping(monitor = "val_loss", mode = "min", patience = 5)
-
-def build_model(lr = 0.0, lr_d = 0.0, units = 0, dr = 0.0):
-    inp = Input(shape = (max_len,))
-    x = Embedding(max_features, embed_size, weights = [embedding_matrix], trainable = False)(inp)
+    inp = Input(shape = (m_max_len,))
+    x = Embedding(m_max_features, m_embed_size, weights = [m_embedding_matrix], trainable = m_trainable)(inp)
     x = SpatialDropout1D(dr)(x)
 
     x = Bidirectional(GRU(units, return_sequences = True))(x)
@@ -207,23 +201,40 @@ def build_model(lr = 0.0, lr_d = 0.0, units = 0, dr = 0.0):
     x = Dense(6, activation = "sigmoid")(x)
     model = Model(inputs = inp, outputs = x)
     model.compile(loss = "binary_crossentropy", optimizer = Adam(lr = lr, decay = lr_d), metrics = ["accuracy"])
-    history = model.fit(X_train, Y_train, batch_size = 128, epochs = 4, validation_data = (X_valid, Y_valid),
-                        verbose = 1, callbacks = [ra_val, check_point, early_stop])
+    history = model.fit(X_train, Y_train, batch_size = m_batch_size, epochs = m_epochs, validation_data = (X_valid, Y_valid),
+                        verbose = m_verbose, callbacks = [ra_val, check_point, early_stop])
     model = load_model(file_path)
     return model
 
-model = build_model(lr = 1e-3, lr_d = 0, units = 128, dr = 0.2)
-pred = model.predict(test, batch_size = 1024, verbose = 1)
 
-
-
-""""""""""""""""""""""""""""""
-# Model
-""""""""""""""""""""""""""""""
 
 """"""""""""""""""""""""""""""
 # Train
 """"""""""""""""""""""""""""""
+def app1 (train, test):
+
+    train_text = train["comment_text"]
+    test_text = test["comment_text"]
+    list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
+    y = train[list_classes].values
+    max_features = 20000
+    max_len = 150
+    embed_size = 300
+
+    train,test, embedding_matrix = f_get_glove_features(train_text, test_text, max_features = 20000, max_len = 150)
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+
+    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                        X_valid, Y_valid, X_train,  Y_train,
+                        m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 1024, verbose = 1)
+    return
+
+print ("goto app1")
+app1(train, test)
+
 
 """"""""""""""""""""""""""""""
 # Stacking
