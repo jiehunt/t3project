@@ -87,7 +87,7 @@ def f_get_coefs(word,*arr):
   return word, np.asarray(arr, dtype='float32')
 
 
-def f_get_glove_features(f_train_text, f_test_text, max_features = 100000, max_len = 150):
+def f_get_glove_features(f_train_text, f_test_text, f_embed_size, max_features = 100000, max_len = 150):
 
     tk = Tokenizer(num_words = max_features, lower = True)
     tk.fit_on_texts(f_train_text)
@@ -100,7 +100,7 @@ def f_get_glove_features(f_train_text, f_test_text, max_features = 100000, max_l
     f_word_index = tk.word_index
     f_embedding_index = dict(f_get_coefs(*o.strip().split(" ")) for o in open(glove_embedding_path))
     nb_words = min(max_features, len(f_word_index))
-    f_embedding_matrix = np.zeros((nb_words, embed_size))
+    f_embedding_matrix = np.zeros((nb_words, f_embed_size))
     for word, i in f_word_index.items():
         if i >= max_features:
           continue
@@ -221,7 +221,7 @@ def app1 (train, test):
     max_len = 150
     embed_size = 300
 
-    train,test, embedding_matrix = f_get_glove_features(train_text, test_text, max_features = 20000, max_len = 150)
+    train,test, embedding_matrix = f_get_glove_features(train_text, test_text, embed_size, max_features = 20000, max_len = 150)
 
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
 
