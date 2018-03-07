@@ -366,8 +366,8 @@ def app_lstm (train, test):
     model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid, Y_valid, X_train,  Y_train, file_path,
                         m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.1,
-                        m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
-    pred = model.predict(test, batch_size = 1024, verbose = 1)
+                        m_batch_size = 32, m_epochs = 2, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
 
     submission = pd.read_csv("./input/sample_submission.csv")
     submission[list_classes] = (pred)
@@ -382,8 +382,8 @@ def app_lstm (train, test):
     model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid, Y_valid, X_train,  Y_train, file_path,
                         m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.1,
-                        m_batch_size = 128, m_epochs = 2, m_verbose = 1 )
-    pred = model.predict(test, batch_size = 1024, verbose = 1)
+                        m_batch_size = 32, m_epochs = 2, m_verbose = 1 )
+    pred = model.predict(test, batch_size = 32, verbose = 1)
 
     submission = pd.read_csv("./input/sample_submission.csv")
     submission[list_classes] = (pred)
