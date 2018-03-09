@@ -301,9 +301,6 @@ def f_get_tfidf_features(f_train_text, f_test_text, f_max_features=10000, f_type
 def f_gen_tfidf_features(train, test):
     import gc
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-    with timer("Performing basic NLP"):
-        get_indicators_and_clean_comments(train)
-        get_indicators_and_clean_comments(test)
 
 
     with timer("Creating numerical features"):
@@ -323,13 +320,13 @@ def f_gen_tfidf_features(train, test):
         train_word_features, test_word_features = f_get_tfidf_features(train_text, test_text,
         f_max_features=10000, f_type='word')
 
-    with timer("get char features: "):
-        train_char_features, test_char_features = f_get_tfidf_features(train_text, test_text,
-        f_max_features=20000, f_type='char')
+    #with timer("get char features: "):
+    #    train_char_features, test_char_features = f_get_tfidf_features(train_text, test_text,
+    #    f_max_features=20000, f_type='char')
 
-    with timer("get shortchar features: "):
-        train_shortchar_features, test_shortchar_features = f_get_tfidf_features(train_text, test_text,
-        f_max_features=50000, f_type='shortchar')
+    #with timer("get shortchar features: "):
+    #    train_shortchar_features, test_shortchar_features = f_get_tfidf_features(train_text, test_text,
+    #    f_max_features=50000, f_type='shortchar')
 
     with timer("get tchar features: "):
         train_tchar_features, test_tchar_features = f_get_tfidf_features(train_text, test_text,
@@ -343,34 +340,34 @@ def f_gen_tfidf_features(train, test):
     with timer("Staking matrices"):
         csr_trn = hstack(
             [
-                train_char_features,
+                # train_char_features,
                 train_word_features,
-                train_shortchar_features,
+                # train_shortchar_features,
                 train_tchar_features,
                 train_num_features
             ]
         ).tocsr()
         del train_word_features
         del train_num_features
-        del train_char_features
+        # del train_char_features
         del train_tchar_features
-        del train_shortchar_features
+        # del train_shortchar_features
         gc.collect()
 
         csr_sub = hstack(
             [
-                test_char_features,
+                # test_char_features,
                 test_word_features,
-                test_shortchar_features,
+                # test_shortchar_features,
                 test_tchar_features,
                 test_num_features
             ]
         ).tocsr()
         del test_word_features
         del test_num_features
-        del test_char_features
+        # del test_char_features
         del test_tchar_features
-        del test_shortchar_features
+        # del test_shortchar_features
         gc.collect()
 
     return csr_trn, csr_sub
@@ -449,8 +446,9 @@ def m_lstm_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
     model = load_model(m_file_path)
     return model
 
-def m_lgb_model(train, test):
+def m_lgb_model(csr_trn, csr_sub, train):
 
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     # Set LGBM parameters
     params = {
         "objective": "binary",
@@ -469,6 +467,60 @@ def m_lgb_model(train, test):
         # "gpu_platform_id": 0,
         # "gpu_device_id": 0
     }
+
+    # Now go through folds
+    # I use K-Fold for reasons described here :
+    # https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge/discussion/49964
+    with timer("Scoring Light GBM"):
+        scores = []
+        folds = KFold(n_splits=4, shuffle=True, random_state=1)
+        lgb_round_dict = defaultdict(int)
+        trn_lgbset = lgb.Dataset(csr_trn, free_raw_data=False)
+        # del csr_trn
+        # gc.collect()
+
+        for class_name in class_names:
+            print("Class %s scores : " % class_name)
+            class_pred = np.zeros(len(train))
+            train_target = train[class_name]
+            trn_lgbset.set_label(train_target.values)
+
+            lgb_rounds = 500
+
+            for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train, train_target)):
+                watchlist = [
+                    trn_lgbset.subset(trn_idx),
+                    trn_lgbset.subset(val_idx)
+                ]
+                # Train lgb l1
+                model = lgb.train(
+                    params=params,
+                    train_set=watchlist[0],
+                    num_boost_round=lgb_rounds,
+                    valid_sets=watchlist,
+                    early_stopping_rounds=50,
+                    verbose_eval=0
+                )
+                class_pred[val_idx] = model.predict(trn_lgbset.data[val_idx], num_iteration=model.best_iteration)
+                score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
+
+                # Compute mean rounds over folds for each class
+                # So that it can be re-used for test predictions
+                lgb_round_dict[class_name] += model.best_iteration
+                print("\t Fold %d : %.6f in %3d rounds" % (n_fold + 1, score, model.best_iteration))
+
+            print("full score : %.6f" % roc_auc_score(train_target, class_pred))
+            scores.append(roc_auc_score(train_target, class_pred))
+            train[class_name + "_oof"] = class_pred
+
+        # Save OOF predictions - may be interesting for stacking...
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lvl0_lgbm_clean_oof.csv",
+                                                                               index=False,
+                                                                               float_format="%.8f")
+
+        print('Total CV score is {}'.format(np.mean(scores)))
+        return model
+
 
 
 
@@ -556,8 +608,19 @@ def app_rnn (train, test):
     return
 
 def app_lbg (train, test):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    with timer("Performing basic NLP"):
+        get_indicators_and_clean_comments(train)
+        get_indicators_and_clean_comments(test)
+
     with timer ("gen tfidf features"):
-        f_gen_tfidf_features(train, test)
+        csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
+
+    drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
+    train.drop(drop_f, axis=1, inplace=True)
+
+    with timer ("get model"):
+        model = m_lgb_model(csr_trn, csr_sub, train)
 
 # print ("goto app_rnn")
 # app_rnn(train, test)
