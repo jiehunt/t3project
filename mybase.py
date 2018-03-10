@@ -82,6 +82,15 @@ class RocAucEvaluation(Callback):
 """"""""""""""""""""""""""""""
 # Help Function
 """"""""""""""""""""""""""""""
+def save_sparse_csr(filename, array):
+    np.savez(filename, data=array.data, indices=array.indices,
+             indptr=array.indptr, shape=array.shape)
+
+def load_sparse_csr(filename):
+    loader = np.load(filename)
+    return csr_matrix((loader['data'], loader['indices'], loader['indptr']),
+                      shape=loader['shape'])
+
 # Contraction replacement patterns
 cont_patterns = [
     (b'(W|w)on\'t', b'will not'),
@@ -616,11 +625,17 @@ def app_lbg (train, test):
     with timer ("gen tfidf features"):
         csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
 
+    print (type(csr_trn))
+    save_sparse_csr('word_tchar_trn.csr',csr_trn)
+    save_sparse_csr('word_tchar_test.csr',csr_sub)
+
+    csr_trn_1 = load_sparse_csr('word_tchar_trn.csr')
+    csr_sub_1 = load_sparse_csr('word_tchar_trn.csr')
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
     with timer ("get model"):
-        model = m_lgb_model(csr_trn, csr_sub, train)
+        model = m_lgb_model(csr_trn_1, csr_sub_1, train)
 
 # print ("goto app_rnn")
 # app_rnn(train, test)
