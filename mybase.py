@@ -546,7 +546,6 @@ def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, mode
     train = pd.concat([X_train, X_valid])
     train_text = train["comment_text"]
 
-
     max_len = 150
     max_features = 100000
     embed_size = 300
@@ -568,13 +567,13 @@ def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, mode
       file_path = './model/gru.hdf5'
       model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
-                        m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
     elif model_type == 'lstm': # lstm
       file_path = './model/lstm.hdf5'
       model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
-                        m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
+                        m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
     pred = model.predict(test, m_batch_size, m_verbose)
@@ -591,7 +590,7 @@ def app_rnn (train, test,embedding_path):
     m_pred = app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, model_type)
 
     m_infile = './input/sample_submission.csv'
-    m_outfile = './res/submission_lstm.csv'
+    m_outfile = './res/submission_gru.csv'
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
