@@ -562,6 +562,15 @@ def app_train_rnn(train, test, embedding_path, model_type):
     units = 128
     dr = 0.2
 
+    class_pred = pd.DataFrame()
+    for class_name in class_names:
+        class_pred[class_name + "_oof"] = np.zeros(len(train))
+        print (class_pred[class_name + "_oof"].shape)
+
+
+    # train = pd.concat([train,class_pred])
+    print (class_pred.shape)
+
     with timer("get pretrain features for rnn"):
         train_r,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
 
@@ -579,6 +588,8 @@ def app_train_rnn(train, test, embedding_path, model_type):
         # gc.collect()
 
         for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train_r, train_target)):
+
+            print (class_pred.shape)
             print ("goto %d fold :" % n_fold)
             X_train_n = train_r[trn_idx]
             Y_train_n = train_target.iloc[trn_idx]
@@ -604,7 +615,8 @@ def app_train_rnn(train, test, embedding_path, model_type):
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-            class_pred = model.predict(X_valid_n)
+            class_pred.iloc[val_idx] =pd.DataFrame(model.predict(X_valid_n))
+            # class_pred = model.predict(X_valid_n)
             print (type(class_pred))
             print (class_pred.shape)
             # class_pred[val_idx] = model.predict(X_valid_n[val_idx])
@@ -617,11 +629,16 @@ def app_train_rnn(train, test, embedding_path, model_type):
         # print("full score : %.6f" % roc_auc_score(train_target, class_pred))
         # scores.append(roc_auc_score(train_target, class_pred))
         # train[class_name + "_oof"] = class_pred
+        train = pd.concat([train,class_pred])
+        for class_name in class_names:
+            print("Class %s scores : " % class_name)
+            print("%.6f" % roc_auc_score(train[class_name].values, train[class_name+"_oof"].values))
+
 
         # Save OOF predictions - may be interesting for stacking...
-        # train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lvl0_lgbm_clean_oof.csv",
-        #                                                                        index=False,
-        #                                                                        float_format="%.8f")
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lgbm_clean_oof.csv",
+                                                                               index=False,
+                                                                               float_format="%.8f")
 
         # print('Total CV score is {}'.format(np.mean(scores)))
 #
