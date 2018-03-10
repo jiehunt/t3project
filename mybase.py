@@ -55,9 +55,6 @@ import lightgbm as lgb
 # system setting
 """"""""""""""""""""""""""""""
 warnings.filterwarnings('ignore')
-start_time = time.time()
-
-np.random.seed(42)
 os.environ["OMP_NUM_THREADS"] = "4"
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
@@ -536,22 +533,13 @@ def m_lgb_model(csr_trn, csr_sub, train):
 """"""""""""""""""""""""""""""
 # Train
 """"""""""""""""""""""""""""""
-train = pd.read_csv('./input/train.csv').fillna(' ')
-test = pd.read_csv('./input/test.csv').fillna(' ')
-
-glove_embedding_path = "./input/glove.840B.300d.txt"
-fasttext_embedding_path = './input/crawl-300d-2M.vec'
-
-train["comment_text"].fillna("no comment")
-test["comment_text"].fillna("no comment")
-
 def m_make_single_submission(m_infile, m_outfile, m_pred):
     list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
     submission = pd.read_csv(m_infile)
     submission[list_classes] = (m_pred)
     submission.to_csv(m_outfile, index = False)
 
-def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, algo, feature_type):
+def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, model_type):
 
     test_text = test["comment_text"]
 
@@ -571,27 +559,19 @@ def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, algo, feature_type):
     units = 128
     dr = 0.2
 
-    if algo == 0: # glove
-      embedding_path = glove_embedding_path
-    else : # fasttext
-      embedding_path = fasttext_embedding_path
-
-    if feature_type == 0: # gru
-      file_path = './model/gru.hdf5'
-    else : # lstm
-      file_path = './model/lstm.hdf5'
-
     train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
 
     X_train_t = train[:X_train.shape[0]]
     X_valid_t = train[X_train.shape[0]:]
 
-    if algo == 0: # gru
+    if model_type == 'gru': # gru
+      file_path = './model/gru.hdf5'
       model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
                         m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
-    else : # lstm
+    elif model_type == 'lstm': # lstm
+      file_path = './model/lstm.hdf5'
       model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
                         m_trainable=False, lr = 1e-3, lr_d = 0, units = 128, dr = 0.2,
@@ -601,15 +581,14 @@ def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, algo, feature_type):
 
     return pred
 
-def app_rnn (train, test):
+def app_rnn (train, test,embedding_path):
 
     list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
     y = train[list_classes].values
 
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
-    algo = 1 # fasttext
-    feature_type = 1 # gru
-    m_pred = app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, algo, feature_type)
+    model_type = 'gru' # gru
+    m_pred = app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, model_type)
 
     m_infile = './input/sample_submission.csv'
     m_outfile = './res/submission_lstm.csv'
@@ -640,8 +619,22 @@ def app_lbg (train, test):
 # print ("goto app_rnn")
 # app_rnn(train, test)
 
-print ("goto tfidf")
-app_lbg(train, test)
+if __name__ == '__main__':
+    train = pd.read_csv('./input/train.csv').fillna(' ')
+    test = pd.read_csv('./input/test.csv').fillna(' ')
+
+    glove_embedding_path = "./input/glove.840B.300d.txt"
+    fasttext_embedding_path = './input/crawl-300d-2M.vec'
+
+    train["comment_text"].fillna("no comment")
+    test["comment_text"].fillna("no comment")
+
+
+    print ("goto tfidf")
+    app_lbg(train, test)
+
+    print ("goto rnn")
+    app_rnn(train, test, glove_embedding_path)
 
 """"""""""""""""""""""""""""""
 # Stacking
