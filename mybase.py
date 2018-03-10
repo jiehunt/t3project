@@ -19,6 +19,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score
 
 from keras.preprocessing import text, sequence
@@ -473,13 +474,14 @@ def m_lgb_model(csr_trn, csr_sub, train):
         # "gpu_platform_id": 0,
         # "gpu_device_id": 0
     }
+    # print (type(train)) frame.DataFrame
 
     # Now go through folds
     # I use K-Fold for reasons described here :
     # https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge/discussion/49964
     with timer("Scoring Light GBM"):
         scores = []
-        folds = KFold(n_splits=4, shuffle=True, random_state=1)
+        folds = StratifiedKFold(n_splits=4, shuffle=True, random_state=1)
         lgb_round_dict = defaultdict(int)
         trn_lgbset = lgb.Dataset(csr_trn, free_raw_data=False)
         # del csr_trn
@@ -539,46 +541,107 @@ def m_make_single_submission(m_infile, m_outfile, m_pred):
     submission[list_classes] = (m_pred)
     submission.to_csv(m_outfile, index = False)
 
-def app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, model_type):
+def app_train_rnn(train, test, embedding_path, model_type):
 
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
     test_text = test["comment_text"]
-
-    train = pd.concat([X_train, X_valid])
     train_text = train["comment_text"]
+
+    splits = 3
 
     max_len = 150
     max_features = 100000
     embed_size = 300
 
     m_batch_size = 32
-    m_epochs = 4
+    m_epochs = 2
     m_verbose = 1
     lr = 1e-3
     lr_d = 0
     units = 128
     dr = 0.2
 
-    train,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
+    with timer("get pretrain features for rnn"):
+        train_r,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
 
-    X_train_t = train[:X_train.shape[0]]
-    X_valid_t = train[X_train.shape[0]:]
+    print (train_r.shape)
+    ## ndarray type train
+    # X_train_t = train[:X_train.shape[0]]
+    # X_valid_t = train[X_train.shape[0]:]
 
-    if model_type == 'gru': # gru
-      file_path = './model/gru.hdf5'
-      model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
-                        X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
-                        m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
-                        m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
-    elif model_type == 'lstm': # lstm
-      file_path = './model/lstm.hdf5'
-      model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
-                        X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
-                        m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
-                        m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+    with timer("Goto Train RNN Model"):
+        # scores = []
+        folds = KFold(n_splits=splits, shuffle=True, random_state=1)
+        # trn_lgbset = lgb.Dataset(csr_trn, free_raw_data=False)
+        # class_pred = np.zeros(len(train))
+        # del csr_trn
+        # gc.collect()
 
-    pred = model.predict(test, m_batch_size, m_verbose)
+        for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train_r, train_target)):
+            print ("goto %d fold :" % n_fold)
+            X_train_n = train_r[trn_idx]
+            Y_train_n = train_target.iloc[trn_idx]
+            X_valid_n = train_r[val_idx]
+            Y_valid_n = train_target.iloc[val_idx]
+            print (type(X_train_n)) # ndarray
+            print (type(Y_train_n)) # ndarray
+            print (X_train_n.shape) # ndarray
+            print (Y_train_n.shape) # ndarray
 
-    return pred
+            if model_type == 'gru': # gru
+              file_path = './model/gru.hdf5'
+
+              model = load_model(file_path)
+              # model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+              #                   X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+              #                   m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+              #                   m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+            elif model_type == 'lstm': # lstm
+              file_path = './model/lstm.hdf5'
+              model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                                X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+                                m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+                                m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+
+            class_pred = model.predict(X_valid_n)
+            print (type(class_pred))
+            print (class_pred.shape)
+            # class_pred[val_idx] = model.predict(X_valid_n[val_idx])
+            # score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
+
+            # # Compute mean rounds over folds for each class
+            # # So that it can be re-used for test predictions
+            # print("\t Fold %d : %.6f" % (n_fold + 1, score))
+
+        # print("full score : %.6f" % roc_auc_score(train_target, class_pred))
+        # scores.append(roc_auc_score(train_target, class_pred))
+        # train[class_name + "_oof"] = class_pred
+
+        # Save OOF predictions - may be interesting for stacking...
+        # train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lvl0_lgbm_clean_oof.csv",
+        #                                                                        index=False,
+        #                                                                        float_format="%.8f")
+
+        # print('Total CV score is {}'.format(np.mean(scores)))
+#
+#     if model_type == 'gru': # gru
+#       file_path = './model/gru.hdf5'
+#       model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+#                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
+#                         m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+#                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+#     elif model_type == 'lstm': # lstm
+#       file_path = './model/lstm.hdf5'
+#       model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+#                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
+#                         m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+#                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+#
+#     pred = model.predict(test, m_batch_size, m_verbose)
+
+    return
+    # return pred
 
 def app_rnn (train, test,embedding_path):
 
@@ -586,12 +649,13 @@ def app_rnn (train, test,embedding_path):
     y = train[list_classes].values
 
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
+    # print (type(X_train))
     model_type = 'gru' # gru
-    m_pred = app_train_rnn(X_train, X_valid, Y_train, Y_valid, test, embedding_path, model_type)
+    m_pred = app_train_rnn(train, test, embedding_path, model_type)
 
-    m_infile = './input/sample_submission.csv'
-    m_outfile = './res/submission_gru.csv'
-    m_make_single_submission(m_infile, m_outfile, m_pred)
+    # m_infile = './input/sample_submission.csv'
+    # m_outfile = './res/submission_gru.csv'
+    # m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
 def app_lbg (train, test):

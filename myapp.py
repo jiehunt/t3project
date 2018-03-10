@@ -69,7 +69,6 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-
     # print ("goto tfidf")
     # app_lbg(train, test)
 
