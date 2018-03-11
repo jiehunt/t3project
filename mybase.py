@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import sys, re, csv, codecs
 import string
+import requests, re, sys
 import logging
 import psutil
 
@@ -232,7 +233,7 @@ def f_get_pretraind_features(f_train_text, f_test_text, f_embed_size, f_embeddin
     f_test  = pad_sequences(f_test, maxlen = max_len)
 
     f_word_index = tk.word_index
-    f_embedding_index = dict(f_get_coefs(*o.strip().split(" ")) for o in open(f_embedding_path))
+    f_embedding_index = dict(f_get_coefs(*o.strip().split(" ")) for o in open(f_embedding_path, encoding="utf-8_sig"))
     nb_words = min(max_features, len(f_word_index))
     f_embedding_matrix = np.zeros((nb_words, f_embed_size))
     for word, i in f_word_index.items():
@@ -529,9 +530,6 @@ def m_lgb_model(csr_trn, csr_sub, train):
         print('Total CV score is {}'.format(np.mean(scores)))
         return model
 
-
-
-
 """"""""""""""""""""""""""""""
 # Train
 """"""""""""""""""""""""""""""
@@ -555,21 +553,22 @@ def app_train_rnn(train, test, embedding_path, model_type):
     embed_size = 300
 
     m_batch_size = 32
-    m_epochs = 2
+    m_epochs = 3
     m_verbose = 1
     lr = 1e-3
     lr_d = 0
     units = 128
     dr = 0.2
 
-    class_pred = pd.DataFrame()
-    for class_name in class_names:
-        class_pred[class_name + "_oof"] = np.zeros(len(train))
-        print (class_pred[class_name + "_oof"].shape)
-
+    # class_pred = pd.DataFrame()
+    # for class_name in class_names:
+    #     class_pred[class_name + "_oof"] = np.zeros(len(train))
+    #     print (class_pred[class_name + "_oof"].shape)
+    class_pred = np.ndarray(shape=(len(train), len(class_names)))
 
     # train = pd.concat([train,class_pred])
-    print (class_pred.shape)
+    print(class_pred.shape)
+
 
     with timer("get pretrain features for rnn"):
         train_r,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
@@ -589,58 +588,62 @@ def app_train_rnn(train, test, embedding_path, model_type):
 
         for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train_r, train_target)):
 
-            print (class_pred.shape)
+            # print (class_pred.shape)
             print ("goto %d fold :" % n_fold)
             X_train_n = train_r[trn_idx]
             Y_train_n = train_target.iloc[trn_idx]
             X_valid_n = train_r[val_idx]
             Y_valid_n = train_target.iloc[val_idx]
-            print (type(X_train_n)) # ndarray
-            print (type(Y_train_n)) # ndarray
-            print (X_train_n.shape) # ndarray
-            print (Y_train_n.shape) # ndarray
 
             if model_type == 'gru': # gru
-              file_path = './model/gru.hdf5'
-
-              model = load_model(file_path)
-              # model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
-              #                   X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
-              #                   m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
-              #                   m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+                file_path = './model/'+str(model_type) + str(n_fold) + '.hdf5'
+                model = load_model(file_path)
+                #  model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                #                  X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+                #                  m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+                #                  m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
             elif model_type == 'lstm': # lstm
-              file_path = './model/lstm.hdf5'
-              model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                file_path = './model/'+str(model_type) + str(n_fold) + '.hdf5'
+                # model = load_model(file_path)
+                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-            class_pred.iloc[val_idx] =pd.DataFrame(model.predict(X_valid_n))
-            # class_pred = model.predict(X_valid_n)
-            print (type(class_pred))
-            print (class_pred.shape)
-            # class_pred[val_idx] = model.predict(X_valid_n[val_idx])
-            # score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
+            class_pred[val_idx] =pd.DataFrame(model.predict(X_valid_n))
 
-            # # Compute mean rounds over folds for each class
-            # # So that it can be re-used for test predictions
-            # print("\t Fold %d : %.6f" % (n_fold + 1, score))
-
-        # print("full score : %.6f" % roc_auc_score(train_target, class_pred))
-        # scores.append(roc_auc_score(train_target, class_pred))
-        # train[class_name + "_oof"] = class_pred
-        train = pd.concat([train,class_pred])
+        oof_names = ['toxic_oof', 'severe_toxic_oof', 'obscene_oof', 'threat_oof', 'insult_oof', 'identity_hate_oof']
+        class_pred = pd.DataFrame(class_pred)
+        class_pred.columns = oof_names
+        train_oof = pd.concat([train,class_pred], axis = 1)
         for class_name in class_names:
             print("Class %s scores : " % class_name)
-            print("%.6f" % roc_auc_score(train[class_name].values, train[class_name+"_oof"].values))
-
+            print("%.6f" % roc_auc_score(train_target[class_name], class_pred[class_name+"_oof"]))
 
         # Save OOF predictions - may be interesting for stacking...
-        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lgbm_clean_oof.csv",
+        train_oof[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lgbm_clean_oof.csv",
                                                                                index=False,
                                                                                float_format="%.8f")
 
-        # print('Total CV score is {}'.format(np.mean(scores)))
+        X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
+
+        # Use train for test
+        if model_type == 'gru': # gru
+            file_path = './model/'+str(model_type) + 'full' + '.hdf5'
+            model = load_model(file_path)
+            # model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+            #                 X_valid, Y_valid, X_train,  Y_train, file_path,
+            #                 m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+            #                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+        elif model_type == 'lstm': # lstm
+            file_path = './model/'+str(model_type) + 'full' + '.hdf5'
+            model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                            X_valid, Y_valid, X_train,  Y_train, file_path,
+                            m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+
+        pred =pd.DataFrame(model.predict(test))
+        pred.columns = class_names
 #
 #     if model_type == 'gru': # gru
 #       file_path = './model/gru.hdf5'
@@ -657,8 +660,7 @@ def app_train_rnn(train, test, embedding_path, model_type):
 #
 #     pred = model.predict(test, m_batch_size, m_verbose)
 
-    return
-    # return pred
+    return pred
 
 def app_rnn (train, test,embedding_path):
 
@@ -667,12 +669,12 @@ def app_rnn (train, test,embedding_path):
 
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
     # print (type(X_train))
-    model_type = 'gru' # gru
+    model_type = 'lstm' # gru
     m_pred = app_train_rnn(train, test, embedding_path, model_type)
 
-    # m_infile = './input/sample_submission.csv'
-    # m_outfile = './res/submission_gru.csv'
-    # m_make_single_submission(m_infile, m_outfile, m_pred)
+    m_infile = './input/sample_submission.csv'
+    m_outfile = './output/submission_' + str(model_type) + '.csv'
+    m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
 def app_lbg (train, test):
@@ -709,9 +711,8 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-
-    print ("goto tfidf")
-    app_lbg(train, test)
+    # print ("goto tfidf")
+    # app_lbg(train, test)
 
     print ("goto rnn")
     app_rnn(train, test, glove_embedding_path)
