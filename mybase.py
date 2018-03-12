@@ -668,7 +668,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-            class_pred[val_idx] =pd.DataFrame(model.predict_proba(X_valid_n)[:,len(class_names)])
+            class_pred[val_idx] =pd.DataFrame(model.predict_proba(X_valid_n)[:,1:len(class_names)])
 
         oof_names = ['toxic_oof', 'severe_toxic_oof', 'obscene_oof', 'threat_oof', 'insult_oof', 'identity_hate_oof']
         class_pred = pd.DataFrame(class_pred)
@@ -701,7 +701,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                             m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                             m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-        pred =pd.DataFrame(model.predict(test))
+        pred =pd.DataFrame(model.predict_proba(test)[:,1:len(class_names)])
         pred.columns = class_names
 
     return pred
@@ -817,7 +817,7 @@ def app_rnn (train, test,embedding_path, feature_type, model_type):
     m_pred = app_train_rnn(train, test, embedding_path, model_type, feature_type)
 
     m_infile = './input/sample_submission.csv'
-    m_outfile = './output/submission_' + str(model_type) + '_' + str(feature_type)+ '.csv'
+    m_outfile = './oof_test/' + str(model_type) + '_' + str(feature_type)+ '_test_oof.csv'
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
