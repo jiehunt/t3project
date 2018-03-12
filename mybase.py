@@ -22,6 +22,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import roc_auc_score
 
 from keras.preprocessing import text, sequence
@@ -54,6 +55,7 @@ from collections import defaultdict
 
 import lightgbm as lgb
 import xgboost as xgb
+from xgboost.sklearn import XGBClassifier
 
 """"""""""""""""""""""""""""""
 # system setting
@@ -89,9 +91,10 @@ def h_get_train_test_list():
    test_list = []
 
    for f in oof_files:
+       print (f)
        train_list.append(f)
-       oof_path = str(f).split('/')[0]
-       oof_file = str(f).split('/')[1]
+       oof_path = str(f).split('\\')[0]
+       oof_file = str(f).split('\\')[1]
        oof_test_pre = str(oof_file).split('oof')[0]
        test_file = str(oof_path) + '_test/'+str(oof_test_pre) + 'test_oof.csv'
        test_list.append(test_file)
@@ -620,22 +623,74 @@ def app_stack():
     train = h_prepare_data_train(train_list)
     test = h_prepare_data_test(test_list)
 
-    # stacker = LogisticRegression()
-    stacker = xgb.XGBClassifier()
+    params = {}
+    params['objective'] = 'binary:logistic'
+    params['learning_rate'] = 0.04
+    params['n_estimators'] = 1000
+    params['max_depth'] = 4
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.9
+    params['min_child_weight'] = 10
+    params['gamma'] = 0
+    params['nthread'] = 4
+    params['gpu_id'] = 0
+    params['max_bin'] = 16
+    params['tree_method'] = 'gpu_hist'
+    params['scale_pos_weight'] = 1
+    params['seed'] = 27
 
+    # stacker = LogisticRegression()
+    stacker = xgb.XGBClassifier(
+        learning_rate=0.1,
+        n_estimators=1000,
+        max_depth=5,
+        min_child_weight=1,
+        gamma=0,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective='binary:',
+        nthread=4,
+        scale_pos_weight=1,
+        seed=27,
+        gpu_id=0,
+        max_bin = 16,
+        tree_method = 'gpu_hist'
+    )
+
+    # Grid seach on subsample and max_features
+    # Choose all predictors except target & IDcols
+    param_test1 = {
+        'max_depth': range(3, 10, 2),
+        'min_child_weight': range(1, 6, 2)
+    }
+    gsearch1 = GridSearchCV(estimator=XGBClassifier(learning_rate=0.1, n_estimators=1000, max_depth=5,
+                                                    min_child_weight=1, gamma=0, subsample=0.8, colsample_bytree=0.8,
+                                                    objective='binary:logistic', nthread=4, scale_pos_weight=1,
+                                                    gpu_id=0,
+                                                    max_bin = 16,
+                                                    tree_method = 'gpu_hist',
+                                                    seed=27),
+                            param_grid=param_test1, scoring='roc_auc', n_jobs=4, iid=False, cv=5)
+
+    # class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
-    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
-    for class_name in class_names:
-        y_target = Y_train[class_name]
-        stacker.fit(X_train, y=y_target)
-        trn_pred = stacker.predict_proba(X_valid)[:,1]
-        print ("%s score : %f" % (str(class_name),  roc_auc_score(Y_valid[class_name], trn_pred)))
+    with timer("goto serch max_depth and min_child_wight"):
+        gsearch1.fit(train_r, train_target['toxic'])
 
-        sub[class_name] = stacker.predict_proba(test)[:,1]
+    # train_r = train.drop(class_names,axis=1)
+    # train_target = train[class_names]
+    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
+    # for class_name in class_names:
+    #     y_target = Y_train[class_name]
+    #     stacker.fit(X_train, y=y_target)
+    #     trn_pred = stacker.predict_proba(X_valid)[:,1]
+    #     print ("%s score : %f" % (str(class_name),  roc_auc_score(Y_valid[class_name], trn_pred)))
 
-    out_file = 'output/submission_' + str(num_file) +'file.csv'
-    sub.to_csv(out_file,index=False)
+    #     sub[class_name] = stacker.predict_proba(test)[:,1]
+
+    # out_file = 'output/submission_' + str(num_file) +'file.csv'
+    # sub.to_csv(out_file,index=False)
     return
 
 """"""""""""""""""""""""""""""
@@ -909,8 +964,9 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    print ("goto tfidf")
-    app_lbg(train, test)
+    app_stack()
+    # print ("goto tfidf")
+    # app_lbg(train, test)
 
     # print ("goto rnn")
     # model_type = 'gru' # gru
