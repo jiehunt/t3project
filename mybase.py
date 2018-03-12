@@ -474,7 +474,8 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
         "reg_alpha": .1,
         "device": "gpu",
         "gpu_platform_id": 0,
-        "gpu_device_id": 0
+        "gpu_device_id": 0,
+        "max_bin": 63
     }
     # print (type(train)) frame.DataFrame
 
@@ -557,7 +558,7 @@ def m_make_single_submission(m_infile, m_outfile, m_pred):
     submission[list_classes] = (m_pred)
     submission.to_csv(m_outfile, index = False)
 
-def app_train_rnn(train, test, embedding_path, model_type):
+def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     train_target = train[class_names]
@@ -578,35 +579,16 @@ def app_train_rnn(train, test, embedding_path, model_type):
     units = 128
     dr = 0.2
 
-    # class_pred = pd.DataFrame()
-    # for class_name in class_names:
-    #     class_pred[class_name + "_oof"] = np.zeros(len(train))
-    #     print (class_pred[class_name + "_oof"].shape)
     class_pred = np.ndarray(shape=(len(train), len(class_names)))
-
-    # train = pd.concat([train,class_pred])
-    print(class_pred.shape)
-
 
     with timer("get pretrain features for rnn"):
         train_r,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
 
-    print (train_r.shape)
-    ## ndarray type train
-    # X_train_t = train[:X_train.shape[0]]
-    # X_valid_t = train[X_train.shape[0]:]
-
     with timer("Goto Train RNN Model"):
-        # scores = []
         folds = KFold(n_splits=splits, shuffle=True, random_state=1)
-        # trn_lgbset = lgb.Dataset(csr_trn, free_raw_data=False)
-        # class_pred = np.zeros(len(train))
-        # del csr_trn
-        # gc.collect()
 
         for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train_r, train_target)):
 
-            # print (class_pred.shape)
             print ("goto %d fold :" % n_fold)
             X_train_n = train_r[trn_idx]
             Y_train_n = train_target.iloc[trn_idx]
@@ -614,16 +596,20 @@ def app_train_rnn(train, test, embedding_path, model_type):
             Y_valid_n = train_target.iloc[val_idx]
 
             if model_type == 'gru': # gru
-                file_path = './model/'+str(model_type) + str(n_fold) + '.hdf5'
-                model = load_model(file_path)
-                #  model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
-                #                  X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
-                #                  m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
-                #                  m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+                file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                                    X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+                                    m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+                                    m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
             elif model_type == 'lstm': # lstm
-                file_path = './model/'+str(model_type) + str(n_fold) + '.hdf5'
-                # model = load_model(file_path)
-                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
@@ -647,14 +633,14 @@ def app_train_rnn(train, test, embedding_path, model_type):
 
         # Use train for test
         if model_type == 'gru': # gru
-            file_path = './model/'+str(model_type) + 'full' + '.hdf5'
+            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
             model = load_model(file_path)
             # model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
             #                 X_valid, Y_valid, X_train,  Y_train, file_path,
             #                 m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
             #                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
         elif model_type == 'lstm': # lstm
-            file_path = './model/'+str(model_type) + 'full' + '.hdf5'
+            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
             model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                             X_valid, Y_valid, X_train,  Y_train, file_path,
                             m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
@@ -662,21 +648,6 @@ def app_train_rnn(train, test, embedding_path, model_type):
 
         pred =pd.DataFrame(model.predict(test))
         pred.columns = class_names
-#
-#     if model_type == 'gru': # gru
-#       file_path = './model/gru.hdf5'
-#       model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
-#                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
-#                         m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
-#                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
-#     elif model_type == 'lstm': # lstm
-#       file_path = './model/lstm.hdf5'
-#       model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
-#                         X_valid_t, Y_valid, X_train_t,  Y_train, file_path,
-#                         m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
-#                         m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
-#
-#     pred = model.predict(test, m_batch_size, m_verbose)
 
     return pred
 
@@ -786,7 +757,7 @@ def app_train_xgb(csr_trn, csr_sub, train):
         return pred
 
 
-def app_rnn (train, test,embedding_path):
+def app_rnn (train, test,embedding_path, feature_type):
 
     list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
     y = train[list_classes].values
@@ -794,10 +765,12 @@ def app_rnn (train, test,embedding_path):
     X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
     # print (type(X_train))
     model_type = 'lstm' # gru
-    m_pred = app_train_rnn(train, test, embedding_path, model_type)
+    # feature_type = 'glove'
+    feature_type = 'fast'
+    m_pred = app_train_rnn(train, test, embedding_path, model_type, feature_type)
 
     m_infile = './input/sample_submission.csv'
-    m_outfile = './output/submission_' + str(model_type) + '.csv'
+    m_outfile = './output/submission_' + str(model_type) + '_' + str(feature_type)+ '.csv'
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
@@ -850,7 +823,8 @@ if __name__ == '__main__':
     app_lbg(train, test)
 
     # print ("goto rnn")
-    # app_rnn(train, test, glove_embedding_path)
+    # app_rnn(train, test, glove_embedding_path, 'glove' )
+    # app_rnn(train, test, glove_embedding_path, 'fast' )
 
 """"""""""""""""""""""""""""""
 # Stacking
