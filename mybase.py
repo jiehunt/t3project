@@ -652,7 +652,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
     return pred
 
-def app_train_xgb(csr_trn, csr_sub, train):
+def app_train_xgb(csr_trn, csr_sub, train, test):
     import gc
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     # Set LGBM parameters
