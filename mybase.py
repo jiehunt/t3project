@@ -667,6 +667,7 @@ def app_train_rnn(train, test, embedding_path, model_type):
     return pred
 
 def app_train_xgb(csr_trn, csr_sub, train):
+    import gc
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     # Set LGBM parameters
     params = {}
@@ -692,7 +693,7 @@ def app_train_xgb(csr_trn, csr_sub, train):
         scores = []
         folds = StratifiedKFold(n_splits=4, shuffle=True, random_state=1)
         xgb_round_dict = defaultdict(int)
-        trn_xgbset = xgb.Dataset(csr_trn, free_raw_data=False)
+        # trn_xgbset = xgb.DMatrix(csr_trn)
         # del csr_trn
         # gc.collect()
 
@@ -700,26 +701,33 @@ def app_train_xgb(csr_trn, csr_sub, train):
             print("Class %s scores : " % class_name)
             class_pred = np.zeros(len(train))
             train_target = train[class_name]
-            trn_xgbset.set_label(train_target.values)
+            # trn_xgbset.set_label(train_target.values)
 
             xgb_rounds = 500
 
             for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train, train_target)):
+                trn_subset = xgb.DMatrix(csr_trn[trn_idx], train_target[trn_idx])
+                val_subset = xgb.DMatrix(csr_trn[val_idx], train_target[val_idx])
                 watchlist = [
-                    ((trn_xgbset.subset(trn_idx), 'train'),
-                    (trn_xgbset.subset(val_idx), 'eval')) ]
+                    (trn_subset, 'train'),
+                    (val_subset, 'eval') ]
                 # Train xgb l1
                 file_path = './model/'+'xgb_' + str(class_name) + str(n_fold) + '.model'
-                model = xgb.train(
-                    params=params,
-                    dtrain=watchlist[0],
-                    num_boost_round=xgb_rounds,
-                    evals=watchlist,
-                    early_stopping_rounds=50,
-                    verbose_eval=0
-                )
-                model.dump_modle(file_path)
-                class_pred[val_idx] = model.predict(trn_xgbset.data[val_idx], ntree_limit=model.best_iteration)
+                if os.path.exists(file_path):
+                    model = xgb.Booster({'nthread': 4})
+                    model.load_model(file_path)
+                else:
+                    with timer("One XGB traing"):
+                        model = xgb.train(
+                            params=params,
+                            dtrain=trn_subset,
+                            num_boost_round=xgb_rounds,
+                            evals=watchlist,
+                            early_stopping_rounds=50,
+                            verbose_eval=False
+                        )
+                    model.dump_model(file_path)
+                class_pred[val_idx] = model.predict(val_subset, ntree_limit=model.best_iteration)
                 score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
 
                 # Compute mean rounds over folds for each class
@@ -730,6 +738,9 @@ def app_train_xgb(csr_trn, csr_sub, train):
             print("full score : %.6f" % roc_auc_score(train_target, class_pred))
             scores.append(roc_auc_score(train_target, class_pred))
             train[class_name + "_oof"] = class_pred
+            del trn_subset
+            del val_subset
+            gc.collect()
 
         # Save OOF predictions - may be interesting for stacking...
         train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("jie_xgb_clean_oof.csv",
@@ -791,8 +802,8 @@ def app_lbg (train, test):
     model_type = 'xgb'
 
     with timer ("load pretrained feature"):
-        csr_trn_1 = load_sparse_csr('word_tchar_char_short_trn.npz')
-        csr_sub_1 = load_sparse_csr('word_tchar_char_short_test.npz')
+        csr_trn_1 = load_sparse_csr('./trained_features/word_tchar_char_short_trn.npz')
+        csr_sub_1 = load_sparse_csr('./trained_features/word_tchar_char_short_test.npz')
 
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
@@ -822,8 +833,8 @@ if __name__ == '__main__':
     print ("goto tfidf")
     app_lbg(train, test)
 
-    print ("goto rnn")
-    app_rnn(train, test, glove_embedding_path)
+    # print ("goto rnn")
+    # app_rnn(train, test, glove_embedding_path)
 
 """"""""""""""""""""""""""""""
 # Stacking
