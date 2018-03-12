@@ -455,7 +455,7 @@ def m_lstm_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
     model = load_model(m_file_path)
     return model
 
-def m_lgb_model(csr_trn, csr_sub, train):
+def m_lgb_model(csr_trn, csr_sub, train, test):
 
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     # Set LGBM parameters
@@ -472,9 +472,9 @@ def m_lgb_model(csr_trn, csr_sub, train):
         "verbose": -1,
         "min_split_gain": .1,
         "reg_alpha": .1,
-        # "device": "gpu",
-        # "gpu_platform_id": 0,
-        # "gpu_device_id": 0
+        "device": "gpu",
+        "gpu_platform_id": 0,
+        "gpu_device_id": 0
     }
     # print (type(train)) frame.DataFrame
 
@@ -529,10 +529,24 @@ def m_lgb_model(csr_trn, csr_sub, train):
                                                                                float_format="%.8f")
 
         print('Total CV score is {}'.format(np.mean(scores)))
-        return model
 
+        pred =pd.DataFrame(test)
+        pred.columns = class_names
+        with timer("Predicting probabilities"):
+            # Go through all classes and reuse computed number of rounds for each class
+            for class_name in class_names:
+                with timer("Predicting probabilities for %s" % class_name):
+                    train_target = train[class_name]
+                    trn_lgbset.set_label(train_target.values)
+                    # Train lgb
+                    model = lgb.train(
+                        params=params,
+                        train_set=trn_lgbset,
+                        num_boost_round=int(lgb_round_dict[class_name] / folds.n_splits)
+                    )
+                    pred[class_name] = model.predict(csr_sub, num_iteration=model.best_iteration)
 
-
+        return pred
 
 """"""""""""""""""""""""""""""
 # Train
@@ -750,7 +764,7 @@ def app_train_xgb(csr_trn, csr_sub, train):
         print('Total CV score is {}'.format(np.mean(scores)))
 
         # Use train for test
-        pred =pd.DataFrame(model.predict(test))
+        pred =pd.DataFrame(test)
         pred.columns = class_names
 #
         with timer("Predicting test probabilities"):
@@ -758,7 +772,7 @@ def app_train_xgb(csr_trn, csr_sub, train):
             for class_name in class_names:
                 with timer("Predicting probabilities for %s" % class_name):
                     train_target = train[class_name]
-                    trn_xgbset.set_label(train_target.values)
+                    trn_xgbset = xgb.DMatrix(csr_trn, train_target)
                     # Train xgb
                     model = xgb.train(
                         params=params,
@@ -799,7 +813,6 @@ def app_lbg (train, test):
     # print (type(csr_trn))
     # save_sparse_csr('word_tchar_trn.csr',csr_trn)
     # save_sparse_csr('word_tchar_test.csr',csr_sub)
-    model_type = 'xgb'
 
     with timer ("load pretrained feature"):
         csr_trn_1 = load_sparse_csr('./trained_features/word_tchar_char_short_trn.npz')
@@ -808,8 +821,11 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
+    model_type = 'lgb'
+    # with timer ("get model"):
+    #     m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test)
     with timer ("get model"):
-        m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train)
+        m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test)
 
     m_infile = './input/sample_submission.csv'
     m_outfile = './output/submission_' + str(model_type) + '.csv'
