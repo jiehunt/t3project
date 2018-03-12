@@ -525,7 +525,7 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
             train[class_name + "_oof"] = class_pred
 
         # Save OOF predictions - may be interesting for stacking...
-        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lvl0_lgbm_clean_oof.csv",
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("jie_lgbm_clean_oof.csv",
                                                                                index=False,
                                                                                float_format="%.8f")
 
@@ -625,7 +625,8 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
             print("%.6f" % roc_auc_score(train_target[class_name], class_pred[class_name+"_oof"]))
 
         # Save OOF predictions - may be interesting for stacking...
-        train_oof[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("lgbm_clean_oof.csv",
+        file_name = str(model_type) + '_' + str(feature_type) + '_oof.csv'
+        train_oof[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(file_name,
                                                                                index=False,
                                                                                float_format="%.8f")
 
