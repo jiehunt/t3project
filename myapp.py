@@ -52,6 +52,39 @@ from collections import defaultdict
 import lightgbm as lgb
 
 from mybase import *
+
+import glob
+
+
+def app_stack():
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    sub = pd.read_csv('./input/sample_submission.csv')
+
+    train_list, test_list =  h_get_train_test_list()
+    num_file = len(train_list)
+
+    train = h_prepare_data_train(train_list)
+    test = h_prepare_data_test(test_list)
+
+    stacker = LogisticRegression()
+
+    X_train = train.drop(class_names,axis=1)
+    for class_name in class_names:
+        y_target = train[class_name]
+        stacker.fit(X_train, y=y_target)
+        sub[class_name] = stacker.predict_proba(test)[:,1]
+        trn_pred = stacker.predict_proba(X_train)[:,1]
+        print ("%s score : %f" % (str(class_name),  roc_auc_score(y_target, trn_pred)))
+
+    out_file = 'output/submission_' + str(num_file) +'file.csv'
+    sub.to_csv(out_file,index=False)
+    return
+
+
 """"""""""""""""""""""""""""""
 # system setting
 """"""""""""""""""""""""""""""
@@ -69,8 +102,9 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    print ("goto tfidf")
-    app_lbg(train, test)
+    # app_stack()
+    # print ("goto tfidf")
+    # app_lbg(train, test)
 
     # print ("goto rnn")
     # app_rnn(train, test, glove_embedding_path)

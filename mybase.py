@@ -8,6 +8,7 @@ import string
 import requests, re, sys
 import logging
 import psutil
+import glob
 
 from scipy.sparse import hstack
 from scipy.sparse import csr_matrix
@@ -82,6 +83,59 @@ class RocAucEvaluation(Callback):
 """"""""""""""""""""""""""""""
 # Help Function
 """"""""""""""""""""""""""""""
+def h_get_train_test_list():
+   oof_files= glob.glob("oof/*")
+   train_list = []
+   test_list = []
+
+   for f in oof_files:
+       train_list.append(f)
+       oof_path = str(f).split('/')[0]
+       oof_file = str(f).split('/')[1]
+       oof_test_pre = str(oof_file).split('oof')[0]
+       test_file = str(oof_path) + '_test/'+str(oof_test_pre) + 'test_oof.csv'
+       test_list.append(test_file)
+
+   return train_list, test_list
+
+def h_prepare_data_train(file_list):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    df = pd.read_csv(file_list[0])
+    df = df[class_names]
+    for (n, f) in enumerate(file_list):
+        one_file = pd.read_csv(f)
+        one_file_n = one_file[class_names_oof]
+        n_class_name = []
+        for c in class_names_oof:
+            n_class_name.append(c+str(n))
+
+        one_file_n.columns = n_class_name
+        df = pd.concat([df, one_file_n], axis=1)
+
+    return df
+
+def h_prepare_data_test(file_list):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    df = pd.DataFrame()
+    for (n, f) in enumerate(file_list):
+        one_file = pd.read_csv(f)
+        one_file_n = one_file[class_names]
+        n_class_name = []
+        for c in class_names_oof:
+            n_class_name.append(c+str(n))
+        one_file_n.columns = n_class_name
+        df = pd.concat([df, one_file_n], axis=1)
+
+    return df
+
 def save_sparse_csr(filename, array):
     np.savez(filename, data=array.data, indices=array.indices,
              indptr=array.indptr, shape=array.shape)
@@ -614,7 +668,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-            class_pred[val_idx] =pd.DataFrame(model.predict(X_valid_n))
+            class_pred[val_idx] =pd.DataFrame(model.predict_proba(X_valid_n)[:,len(class_names)])
 
         oof_names = ['toxic_oof', 'severe_toxic_oof', 'obscene_oof', 'threat_oof', 'insult_oof', 'identity_hate_oof']
         class_pred = pd.DataFrame(class_pred)
@@ -625,7 +679,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
             print("%.6f" % roc_auc_score(train_target[class_name], class_pred[class_name+"_oof"]))
 
         # Save OOF predictions - may be interesting for stacking...
-        file_name = str(model_type) + '_' + str(feature_type) + '_oof.csv'
+        file_name = 'oof/'+str(model_type) + '_' + str(feature_type) + '_oof.csv'
         train_oof[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(file_name,
                                                                                index=False,
                                                                                float_format="%.8f")
@@ -810,12 +864,12 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    print ("goto tfidf")
-    app_lbg(train, test)
+    # print ("goto tfidf")
+    # app_lbg(train, test)
 
-    # print ("goto rnn")
-    # model_type = 'gru' # gru
-    # app_rnn(train, test, glove_embedding_path, 'glove', model_type)
+    print ("goto rnn")
+    model_type = 'gru' # gru
+    app_rnn(train, test, glove_embedding_path, 'glove', model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
 """"""""""""""""""""""""""""""
