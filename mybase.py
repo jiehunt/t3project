@@ -104,7 +104,7 @@ def h_prepare_data_train(file_list):
     for c in class_names:
         class_names_oof.append(c+'_oof')
 
-    df = pd.read_csv(file_list[0])
+    df = pd.read_csv('input/train.csv')
     df = df[class_names]
     for (n, f) in enumerate(file_list):
         one_file = pd.read_csv(f)
@@ -604,6 +604,37 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
         return pred
 
 """"""""""""""""""""""""""""""
+# Stacking
+""""""""""""""""""""""""""""""
+def app_stack():
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    sub = pd.read_csv('./input/sample_submission.csv')
+
+    train_list, test_list =  h_get_train_test_list()
+    num_file = len(train_list)
+
+    train = h_prepare_data_train(train_list)
+    test = h_prepare_data_test(test_list)
+
+    stacker = LogisticRegression()
+
+    X_train = train.drop(class_names,axis=1)
+    for class_name in class_names:
+        y_target = train[class_name]
+        stacker.fit(X_train, y=y_target)
+        sub[class_name] = stacker.predict_proba(test)[:,1]
+        trn_pred = stacker.predict_proba(X_train)[:,1]
+        print ("%s score : %f" % (str(class_name),  roc_auc_score(y_target, trn_pred)))
+
+    out_file = 'output/submission_' + str(num_file) +'file.csv'
+    sub.to_csv(out_file,index=False)
+    return
+
+""""""""""""""""""""""""""""""
 # Train
 """"""""""""""""""""""""""""""
 def m_make_single_submission(m_infile, m_outfile, m_pred):
@@ -668,7 +699,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-            class_pred[val_idx] =pd.DataFrame(model.predict_proba(X_valid_n)[:,1:len(class_names)])
+            class_pred[val_idx] =pd.DataFrame(model.predict(X_valid_n))
 
         oof_names = ['toxic_oof', 'severe_toxic_oof', 'obscene_oof', 'threat_oof', 'insult_oof', 'identity_hate_oof']
         class_pred = pd.DataFrame(class_pred)
@@ -689,19 +720,24 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
         # Use train for test
         if model_type == 'gru': # gru
             file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
-            model = load_model(file_path)
-            # model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
-            #                 X_valid, Y_valid, X_train,  Y_train, file_path,
-            #                 m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
-            #                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+            if os.path.exists(file_path):
+                model = load_model(file_path)
+            else:
+                model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                            X_valid, Y_valid, X_train,  Y_train, file_path,
+                            m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
         elif model_type == 'lstm': # lstm
             file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
-            model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+            if os.path.exists(file_path):
+                model = load_model(file_path)
+            else:
+                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                             X_valid, Y_valid, X_train,  Y_train, file_path,
                             m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                             m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
-        pred =pd.DataFrame(model.predict_proba(test)[:,1:len(class_names)])
+        pred =pd.DataFrame(model.predict(test))
         pred.columns = class_names
 
     return pred
@@ -872,9 +908,6 @@ if __name__ == '__main__':
     app_rnn(train, test, glove_embedding_path, 'glove', model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
-""""""""""""""""""""""""""""""
-# Stacking
-""""""""""""""""""""""""""""""
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
