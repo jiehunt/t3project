@@ -579,7 +579,7 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
             train[class_name + "_oof"] = class_pred
 
         # Save OOF predictions - may be interesting for stacking...
-        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("jie_lgbm_clean_oof.csv",
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("oof/lgbm_clean_oof.csv",
                                                                                index=False,
                                                                                float_format="%.8f")
 
@@ -823,7 +823,7 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
             gc.collect()
 
         # Save OOF predictions - may be interesting for stacking...
-        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("jie_xgb_clean_oof.csv",
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("oof/xgb_oof.csv",
                                                                                index=False,
                                                                                float_format="%.8f")
 
@@ -845,9 +845,9 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
                         dtrain=trn_xgbset,
                         num_boost_round=int(xgb_round_dict[class_name] / folds.n_splits)
                     )
-                    file_path = './model/'+'xgb_' + str(class_name) + 'full' + '.model'
+                    file_path = './oof_test/'+'xgb_' + str(class_name) + 'full' + '.model'
                     model.dump_modle(file_path)
-                    pred[class_name] = model.predict(csr_sub, num_iteration=model.best_iteration)
+                    pred[class_name] = model.predict_proba(csr_sub, num_iteration=model.best_iteration)[:,1]
 
         return pred
 
@@ -881,14 +881,16 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
-    model_type = 'lgb'
-    # with timer ("get model"):
-    #     m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test)
-    with timer ("get model"):
-        m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test)
+    model_type = 'xgb'
+    if model_type == 'xgb':
+        with timer ("get model"):
+            m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test)
+    elif model_type == 'lgb':
+        with timer ("get model"):
+            m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test)
 
     m_infile = './input/sample_submission.csv'
-    m_outfile = './output/submission_' + str(model_type) + '.csv'
+    m_outfile = './oof_test/' + str(model_type) + '_test_oof.csv'
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
@@ -904,12 +906,12 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # print ("goto tfidf")
-    # app_lbg(train, test)
+    print ("goto tfidf")
+    app_lbg(train, test)
 
-    print ("goto rnn")
-    model_type = 'gru' # gru
-    app_rnn(train, test, glove_embedding_path, 'glove', model_type)
+    # print ("goto rnn")
+    # model_type = 'gru' # gru
+    # app_rnn(train, test, glove_embedding_path, 'glove', model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
 
