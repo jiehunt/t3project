@@ -758,16 +758,8 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
         return pred
 
 
-def app_rnn (train, test,embedding_path, feature_type):
+def app_rnn (train, test,embedding_path, feature_type, model_type):
 
-    list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
-    y = train[list_classes].values
-
-    X_train, X_valid, Y_train, Y_valid = train_test_split(train, y, test_size = 0.1)
-    # print (type(X_train))
-    model_type = 'lstm' # gru
-    # feature_type = 'glove'
-    feature_type = 'fast'
     m_pred = app_train_rnn(train, test, embedding_path, model_type, feature_type)
 
     m_infile = './input/sample_submission.csv'
@@ -807,8 +799,6 @@ def app_lbg (train, test):
     return
 
 
-# print ("goto app_rnn")
-# app_rnn(train, test)
 
 if __name__ == '__main__':
     train = pd.read_csv('./input/train.csv').fillna(' ')
@@ -824,8 +814,9 @@ if __name__ == '__main__':
     app_lbg(train, test)
 
     # print ("goto rnn")
-    # app_rnn(train, test, glove_embedding_path, 'glove' )
-    # app_rnn(train, test, glove_embedding_path, 'fast' )
+    # model_type = 'gru' # gru
+    # app_rnn(train, test, glove_embedding_path, 'glove', model_type)
+    # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
 """"""""""""""""""""""""""""""
 # Stacking
