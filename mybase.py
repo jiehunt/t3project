@@ -620,15 +620,19 @@ def app_stack():
     train = h_prepare_data_train(train_list)
     test = h_prepare_data_test(test_list)
 
-    stacker = LogisticRegression()
+    # stacker = LogisticRegression()
+    stacker = xgb.XGBClassifier()
 
-    X_train = train.drop(class_names,axis=1)
+    train_r = train.drop(class_names,axis=1)
+    train_target = train[class_names]
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
     for class_name in class_names:
-        y_target = train[class_name]
+        y_target = Y_train[class_name]
         stacker.fit(X_train, y=y_target)
+        trn_pred = stacker.predict_proba(X_valid)[:,1]
+        print ("%s score : %f" % (str(class_name),  roc_auc_score(Y_valid[class_name], trn_pred)))
+
         sub[class_name] = stacker.predict_proba(test)[:,1]
-        trn_pred = stacker.predict_proba(X_train)[:,1]
-        print ("%s score : %f" % (str(class_name),  roc_auc_score(y_target, trn_pred)))
 
     out_file = 'output/submission_' + str(num_file) +'file.csv'
     sub.to_csv(out_file,index=False)
