@@ -52,6 +52,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 import lightgbm as lgb
+import xgboost as xgb
 
 """"""""""""""""""""""""""""""
 # system setting
@@ -530,6 +531,9 @@ def m_lgb_model(csr_trn, csr_sub, train):
         print('Total CV score is {}'.format(np.mean(scores)))
         return model
 
+
+
+
 """"""""""""""""""""""""""""""
 # Train
 """"""""""""""""""""""""""""""
@@ -662,6 +666,101 @@ def app_train_rnn(train, test, embedding_path, model_type):
 
     return pred
 
+def app_train_xgb(csr_trn, csr_sub, train):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    # Set LGBM parameters
+    params = {}
+    params['objective'] = 'binary:logistic'
+    params['learning_rate'] = 0.04
+    params['n_estimators'] = 1000
+    params['max_depth'] = 4
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.9
+    params['min_child_weight'] = 10
+    params['gamma'] = 0
+    params['nthread'] = 4
+    params['gpu_id'] = 0
+    params['max_bin'] = 16
+    params['tree_method'] = 'gpu_hist'
+    params['scale_pos_weight'] = 1
+    params['seed'] = 27
+
+    # Now go through folds
+    # I use K-Fold for reasons described here :
+    # https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge/discussion/49964
+    with timer("Scoring xgboost"):
+        scores = []
+        folds = StratifiedKFold(n_splits=4, shuffle=True, random_state=1)
+        xgb_round_dict = defaultdict(int)
+        trn_xgbset = xgb.Dataset(csr_trn, free_raw_data=False)
+        # del csr_trn
+        # gc.collect()
+
+        for class_name in class_names:
+            print("Class %s scores : " % class_name)
+            class_pred = np.zeros(len(train))
+            train_target = train[class_name]
+            trn_xgbset.set_label(train_target.values)
+
+            xgb_rounds = 500
+
+            for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train, train_target)):
+                watchlist = [
+                    ((trn_xgbset.subset(trn_idx), 'train'),
+                    (trn_xgbset.subset(val_idx), 'eval')) ]
+                # Train xgb l1
+                file_path = './model/'+'xgb_' + str(class_name) + str(n_fold) + '.model'
+                model = xgb.train(
+                    params=params,
+                    dtrain=watchlist[0],
+                    num_boost_round=xgb_rounds,
+                    evals=watchlist,
+                    early_stopping_rounds=50,
+                    verbose_eval=0
+                )
+                model.dump_modle(file_path)
+                class_pred[val_idx] = model.predict(trn_xgbset.data[val_idx], ntree_limit=model.best_iteration)
+                score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
+
+                # Compute mean rounds over folds for each class
+                # So that it can be re-used for test predictions
+                xgb_round_dict[class_name] += model.best_iteration
+                print("\t Fold %d : %.6f in %3d rounds" % (n_fold + 1, score, model.best_iteration))
+
+            print("full score : %.6f" % roc_auc_score(train_target, class_pred))
+            scores.append(roc_auc_score(train_target, class_pred))
+            train[class_name + "_oof"] = class_pred
+
+        # Save OOF predictions - may be interesting for stacking...
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("jie_xgb_clean_oof.csv",
+                                                                               index=False,
+                                                                               float_format="%.8f")
+
+        print('Total CV score is {}'.format(np.mean(scores)))
+
+        # Use train for test
+        pred =pd.DataFrame(model.predict(test))
+        pred.columns = class_names
+#
+        with timer("Predicting test probabilities"):
+            # Go through all classes and reuse computed number of rounds for each class
+            for class_name in class_names:
+                with timer("Predicting probabilities for %s" % class_name):
+                    train_target = train[class_name]
+                    trn_xgbset.set_label(train_target.values)
+                    # Train xgb
+                    model = xgb.train(
+                        params=params,
+                        dtrain=trn_xgbset,
+                        num_boost_round=int(xgb_round_dict[class_name] / folds.n_splits)
+                    )
+                    file_path = './model/'+'xgb_' + str(class_name) + 'full' + '.model'
+                    model.dump_modle(file_path)
+                    pred[class_name] = model.predict(csr_sub, num_iteration=model.best_iteration)
+
+        return pred
+
+
 def app_rnn (train, test,embedding_path):
 
     list_classes = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
@@ -683,20 +782,29 @@ def app_lbg (train, test):
         get_indicators_and_clean_comments(train)
         get_indicators_and_clean_comments(test)
 
-    with timer ("gen tfidf features"):
-        csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
+    # with timer ("gen tfidf features"):
+    #     csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
 
-    print (type(csr_trn))
-    save_sparse_csr('word_tchar_trn.csr',csr_trn)
-    save_sparse_csr('word_tchar_test.csr',csr_sub)
+    # print (type(csr_trn))
+    # save_sparse_csr('word_tchar_trn.csr',csr_trn)
+    # save_sparse_csr('word_tchar_test.csr',csr_sub)
+    model_type = 'xgb'
 
-    csr_trn_1 = load_sparse_csr('word_tchar_trn.csr')
-    csr_sub_1 = load_sparse_csr('word_tchar_trn.csr')
+    with timer ("load pretrained feature"):
+        csr_trn_1 = load_sparse_csr('word_tchar_char_short_trn.npz')
+        csr_sub_1 = load_sparse_csr('word_tchar_char_short_test.npz')
+
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
     with timer ("get model"):
-        model = m_lgb_model(csr_trn_1, csr_sub_1, train)
+        m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train)
+
+    m_infile = './input/sample_submission.csv'
+    m_outfile = './output/submission_' + str(model_type) + '.csv'
+    m_make_single_submission(m_infile, m_outfile, m_pred)
+    return
+
 
 # print ("goto app_rnn")
 # app_rnn(train, test)
@@ -711,8 +819,8 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # print ("goto tfidf")
-    # app_lbg(train, test)
+    print ("goto tfidf")
+    app_lbg(train, test)
 
     print ("goto rnn")
     app_rnn(train, test, glove_embedding_path)

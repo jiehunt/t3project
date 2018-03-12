@@ -69,11 +69,11 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # print ("goto tfidf")
-    # app_lbg(train, test)
+    print ("goto tfidf")
+    app_lbg(train, test)
 
-    print ("goto rnn")
-    app_rnn(train, test, glove_embedding_path)
+    # print ("goto rnn")
+    # app_rnn(train, test, glove_embedding_path)
 
 
 
