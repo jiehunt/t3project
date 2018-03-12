@@ -793,21 +793,23 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
                     (val_subset, 'eval') ]
                 # Train xgb l1
                 file_path = './model/'+'xgb_' + str(class_name) + str(n_fold) + '.model'
-                if os.path.exists(file_path):
-                    model = xgb.Booster({'nthread': 4})
-                    model.load_model(file_path)
-                else:
-                    with timer("One XGB traing"):
-                        model = xgb.train(
-                            params=params,
-                            dtrain=trn_subset,
-                            num_boost_round=xgb_rounds,
-                            evals=watchlist,
-                            early_stopping_rounds=50,
-                            verbose_eval=False
-                        )
-                    model.dump_model(file_path)
-                class_pred[val_idx] = model.predict(val_subset, ntree_limit=model.best_iteration)
+                # if os.path.exists(file_path):
+                #     model = xgb.Booster({'nthread': 4})
+                #     model.load_model(file_path)
+                # else:
+                with timer("One XGB traing"):
+                    model = xgb.train(
+                        params=params,
+                        dtrain=trn_subset,
+                        num_boost_round=xgb_rounds,
+                        evals=watchlist,
+                        early_stopping_rounds=50,
+                        verbose_eval=False
+                    )
+                # model.dump_model(file_path)
+                xgb.Booster.save_model(model,file_path)
+
+                class_pred[val_idx] = model.predict_proba(val_subset)[:,1]
                 score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
 
                 # Compute mean rounds over folds for each class
@@ -845,9 +847,10 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
                         dtrain=trn_xgbset,
                         num_boost_round=int(xgb_round_dict[class_name] / folds.n_splits)
                     )
-                    file_path = './oof_test/'+'xgb_' + str(class_name) + 'full' + '.model'
-                    model.dump_modle(file_path)
-                    pred[class_name] = model.predict_proba(csr_sub, num_iteration=model.best_iteration)[:,1]
+                    file_path = './model/'+'xgb_' + str(class_name) + 'full' + '.model'
+                    # model.dump_modle(file_path)
+                    xgb.Booster.save_model(model, file_path)
+                    pred[class_name] = model.predict_proba(csr_sub)[:,1]
 
         return pred
 
@@ -883,10 +886,10 @@ def app_lbg (train, test):
 
     model_type = 'xgb'
     if model_type == 'xgb':
-        with timer ("get model"):
+        with timer ("get xgb model"):
             m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test)
     elif model_type == 'lgb':
-        with timer ("get model"):
+        with timer ("get lgb model"):
             m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test)
 
     m_infile = './input/sample_submission.csv'
