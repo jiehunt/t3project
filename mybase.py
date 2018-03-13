@@ -889,9 +889,10 @@ def app_rnn (train, test,embedding_path, feature_type, model_type):
 
 def app_lbg (train, test):
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    test_r = test
     with timer("Performing basic NLP"):
         get_indicators_and_clean_comments(train)
-        get_indicators_and_clean_comments(test)
+        get_indicators_and_clean_comments(test_r)
 
     # with timer ("gen tfidf features"):
     #     csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
@@ -932,7 +933,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    app_stack()
+    # app_stack()
     # print ("goto tfidf")
     # app_lbg(train, test)
 
