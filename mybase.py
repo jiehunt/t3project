@@ -23,6 +23,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_auc_score
 
 from keras.preprocessing import text, sequence
@@ -608,6 +609,45 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
 
         return pred
 
+def m_pr(x, y_i, y):
+    p = x[y==y_i].sum(0)
+    return (p+1) / ((y==y_i).sum()+1)
+
+
+def m_nbsvm_model(x, y):
+    y = y.values
+    r = np.log(m_pr(x, 1,y) / m_pr(x, 0,y))
+    m = LogisticRegression(C=5, dual=True)
+    x_nb = x.multiply(r)
+    return m.fit(x_nb, y), r
+
+class my_nbsvm:
+
+    def __init__(self, **params):
+        self.model = LogisticRegression(C=4, dual=True)
+        return
+
+    def m_pr(x, y_i, y):
+        p = x[y==y_i].sum(0)
+        return (p+1) / ((y==y_i).sum()+1)
+
+    def fit(self, X, y):
+        y = y.values
+        self.r = np.log(m_pr(X, 1,y) / m_pr(X, 0,y))
+        x_nb = X.multiply(self.r)
+        return self.model.fit(x_nb, y)
+
+    def predict(self, X):
+        return self.model.predict(X.multiply(self.r))
+
+    def predict_proba(self,X):
+        return self.model.predict_proba(X.multiply(self.r))
+
+    def get_params(self, deep):
+        return self.model.get_params(deep=deep)
+
+
+
 """"""""""""""""""""""""""""""
 # Stacking
 """"""""""""""""""""""""""""""
@@ -669,6 +709,75 @@ def m_make_single_submission(m_infile, m_outfile, m_pred):
     submission = pd.read_csv(m_infile)
     submission[list_classes] = (m_pred)
     submission.to_csv(m_outfile, index = False)
+
+def app_train_nbsvm(csr_trn, csr_sub,train, test, feature_type):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+
+    n_splits = 4
+    model_type = 'nbsvm'
+    with timer("Scoring nbsvm"):
+        scores = []
+        folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
+        nbsvm_round_dict = defaultdict(int)
+
+        for class_name in class_names:
+            print("Class %s scores : " % class_name)
+            class_pred = np.zeros(len(train))
+            train_target = train[class_name]
+
+            model = my_nbsvm()
+            for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train, train_target)):
+                file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(class_name) + str(n_fold) + '.model'
+
+                # if os.path.exists(file_path):
+                #     model.load_model(file_path)
+                #     # xgb.Booster.load_model(model,file_path)
+                # else:
+                with timer("One nbsvm traing"):
+                    model.fit(csr_trn[trn_idx], train_target[trn_idx])
+                    # model, r = m_nbsvm_model(csr_trn[trn_idx], train_target[trn_idx])
+
+
+                class_pred[val_idx] = model.predict_proba(csr_trn[val_idx])[:,1]
+                # class_pred[val_idx] = model.predict_proba(csr_trn[val_idx].multiply(r))[:,1]
+                score = roc_auc_score(train_target[val_idx], class_pred[val_idx])
+
+                # Compute mean rounds over folds for each class
+                # So that it can be re-used for test predictions
+                print("\t Fold %d : %.6f " % (n_fold + 1, score))
+
+            print("full score : %.6f" % roc_auc_score(train_target, class_pred))
+            scores.append(roc_auc_score(train_target, class_pred))
+            train[class_name + "_oof"] = class_pred
+
+        # Save OOF predictions - may be interesting for stacking...
+        oof_file = './oof/'+str(model_type) +'_'+str(feature_type) + '_oof.csv'
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(oof_file,
+                                                                               index=False,
+                                                                               float_format="%.8f")
+
+        print('Total CV score is {}'.format(np.mean(scores)))
+
+        # Use train for test
+        pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred =pd.DataFrame(pred)
+        pred.columns = class_names
+#
+        with timer("Predicting test probabilities"):
+            # Go through all classes and reuse computed number of rounds for each class
+            for class_name in class_names:
+                with timer("Predicting probabilities for %s" % class_name):
+                    train_target = train[class_name]
+                    # Train xgb
+                    # model, r = m_nbsvm_model(csr_trn, train_target)
+                    model = my_nbsvm()
+                    model.fit(csr_trn, train_target)
+                    file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(class_name) + 'full.model'
+                    # model.dump_modle(file_path)
+                    # pred[class_name] = model.predict_proba(csr_sub.multiply(r))[:,1]
+                    pred[class_name] = model.predict_proba(csr_sub)[:,1]
+
+        return pred
 
 def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
@@ -891,10 +1000,10 @@ def app_rnn (train, test,embedding_path, feature_type, model_type):
 
 def app_lbg (train, test):
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-    test_r = test
-    with timer("Performing basic NLP"):
-        get_indicators_and_clean_comments(train)
-        get_indicators_and_clean_comments(test_r)
+    # test_r = test
+    # with timer("Performing basic NLP"):
+    #     get_indicators_and_clean_comments(train)
+    #     get_indicators_and_clean_comments(test_r)
 
     # with timer ("gen tfidf features"):
     #     csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
@@ -910,16 +1019,25 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
-    model_type = 'xgb'
+    # test_model = my_nbsvm()
+
+    # pred = cross_val_predict(test_model, csr_trn_1, train['toxic'],cv=4)
+    # print ("my_nbsvm score is %.6f" % roc_auc_score(train['toxic'], pred))
+
+    model_type = 'nbsvm'
+    feature_type = 'wtcs'
     if model_type == 'xgb':
         with timer ("get xgb model"):
             m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test)
     elif model_type == 'lgb':
         with timer ("get lgb model"):
             m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test)
+    elif model_type == 'nbsvm':
+        with timer ("get nbsvm model"):
+            m_pred = app_train_nbsvm(csr_trn_1, csr_sub_1, train, test, feature_type)
 
     m_infile = './input/sample_submission.csv'
-    m_outfile = './oof_test/' + str(model_type) + '_test_oof.csv'
+    m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
