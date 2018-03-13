@@ -91,10 +91,11 @@ def h_get_train_test_list():
    test_list = []
 
    for f in oof_files:
-       print (f)
        train_list.append(f)
-       oof_path = str(f).split('\\')[0]
-       oof_file = str(f).split('\\')[1]
+       # oof_path = str(f).split('\\')[0]
+       # oof_file = str(f).split('\\')[1]
+       oof_path = str(f).split('/')[0]
+       oof_file = str(f).split('/')[1]
        oof_test_pre = str(oof_file).split('oof')[0]
        test_file = str(oof_path) + '_test/'+str(oof_test_pre) + 'test_oof.csv'
        test_list.append(test_file)
@@ -623,95 +624,15 @@ def app_stack():
     train = h_prepare_data_train(train_list)
     test = h_prepare_data_test(test_list)
 
-    params = {}
-    params['objective'] = 'binary:logistic'
-    params['learning_rate'] = 0.04
-    params['n_estimators'] = 1000
-    params['max_depth'] = 4
-    params['subsample'] = 0.6
-    params['colsample_bytree'] = 0.6
-    params['min_child_weight'] = 10
-    params['gamma'] = 0
-    params['nthread'] = 4
-    params['gpu_id'] = 0
-    params['max_bin'] = 16
-    params['tree_method'] = 'gpu_hist'
-    params['scale_pos_weight'] = 1
-    params['seed'] = 27
-
     # stacker = LogisticRegression()
-    stacker = xgb.XGBClassifier(
-        learning_rate=0.05,
-        n_estimators=1000,
-        max_depth=2,
-        min_child_weight=7,
-        gamma=0,
-        subsample=0.6,
-        colsample_bytree=0.6,
-        reg_alpha=1,
-        objective='binary:logistic',
-        nthread=4,
-        scale_pos_weight=1,
-        seed=27,
-        gpu_id=0,
-        max_bin = 16,
-        tree_method = 'gpu_hist'
-    )
+    # stacker = xgb.XGBClassifier()
+    stacker = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                 learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+                                 # feature_fraction=0.45,bagging_fraction=0.8, bagging_freq=5,  verbose=-1)
 
-    # Grid seach on subsample and max_features
-    # Choose all predictors except target & IDcols
-    param_test1 = {
-        'max_depth': [2,3,4,5,6,7],
-        'min_child_weight': [3,4,5,6,7]
-    }
-    param_test3 = {
-        'gamma': [i / 10.0 for i in range(0, 5)]
-    }
-    param_test4 = {
-        'subsample': [i / 10.0 for i in range(6, 10)],
-        'colsample_bytree': [i / 10.0 for i in range(6, 10)]
-    }
-    param_test5 = {
-        'subsample': [i / 100.0 for i in range(55, 75, 5)],
-        'colsample_bytree': [i / 100.0 for i in range(55, 75, 5)]
-    }
-    param_test6 = {
-        'reg_alpha': [1e-5, 1e-2, 0.1, 1, 100]
-    }
-    param_test7 = {
-        'learning_rate': [0.001, 0.01, 0.05, 0.1]
-    }
-    param_test8 = {
-        'n_estimators': [1000,2000,3000,4000,5000]
-    }
-    gsearch1 = GridSearchCV(estimator=XGBClassifier(learning_rate=0.05, n_estimators=1000, max_depth=2,
-                                                    min_child_weight=7, gamma=0, subsample=0.6, colsample_bytree=0.6,
-                                                    objective='binary:logistic', nthread=4, scale_pos_weight=1,
-                                                    reg_alpha=1,
-                                                    gpu_id=0,
-                                                    max_bin = 16,
-                                                    tree_method = 'gpu_hist',
-                                                    seed=27),
-    #                         param_grid=param_test8, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-    # param_grid=param_test7, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-    # param_grid=param_test6, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-    # param_grid=param_test5, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-    # param_grid=param_test4, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-    # param_grid=param_test3, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-    param_grid=param_test1, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
-
-    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
-    with timer("goto serch max_depth and min_child_wight"):
-        gsearch1.fit(train_r, train_target['toxic'])
-        print (gsearch1.grid_scores_ )
-        print (gsearch1.best_params_ )
-        print (gsearch1.best_score_)
-
-    # train_r = train.drop(class_names,axis=1)
-    # train_target = train[class_names]
-    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
+    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # for class_name in class_names:
     #     y_target = Y_train[class_name]
     #     stacker.fit(X_train, y=y_target)
@@ -719,6 +640,21 @@ def app_stack():
     #     print ("%s score : %f" % (str(class_name),  roc_auc_score(Y_valid[class_name], trn_pred)))
 
     #     sub[class_name] = stacker.predict_proba(test)[:,1]
+
+    # Fit and submit
+    X_train = train_r
+    Y_train = train_target
+    scores = []
+    for label in class_names:
+        print(label)
+        score = cross_val_score(stacker, X_train, Y_train[label], cv=5, scoring='roc_auc',verbose=0)
+        print("AUC:", score)
+        scores.append(np.mean(score))
+        stacker.fit(X_train, Y_train[label])
+        sub[label] = stacker.predict_proba(test)[:,1]
+        # trn_pred = stacker.predict_proba(X_valid)[:,1]
+        # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
+    print("CV score:", np.mean(scores))
 
     # out_file = 'output/submission_' + str(num_file) +'file.csv'
     # sub.to_csv(out_file,index=False)
