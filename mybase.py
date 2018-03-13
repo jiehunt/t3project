@@ -1019,11 +1019,6 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
-    # test_model = my_nbsvm()
-
-    # pred = cross_val_predict(test_model, csr_trn_1, train['toxic'],cv=4)
-    # print ("my_nbsvm score is %.6f" % roc_auc_score(train['toxic'], pred))
-
     model_type = 'nbsvm'
     feature_type = 'wtcs'
     if model_type == 'xgb':
@@ -1041,6 +1036,40 @@ def app_lbg (train, test):
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
+def app_glove_nbsvm (train, test,embedding_path, feature_type, model_type):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
+    test_text = test["comment_text"]
+    train_text = train["comment_text"]
+
+    splits = 3
+    max_len = 150
+    max_features = 100000
+    embed_size = 300
+    m_batch_size = 32
+    m_epochs = 3
+    m_verbose = 1
+    lr = 1e-3
+    lr_d = 0
+    units = 128
+    dr = 0.2
+
+    model_type = 'nbsvm'
+    feature_type = 'glove'
+
+    with timer("get pretrain features for rnn"):
+        train_r,test_r, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
+
+    pred =  app_train_nbsvm(train_r, test_r,train, test, feature_type)
+
+    m_infile = './input/sample_submission.csv'
+    m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
+    m_make_single_submission(m_infile, m_outfile, pred)
+
+    return
+
+
+
 
 
 if __name__ == '__main__':
@@ -1053,7 +1082,11 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    app_stack()
+    # app_stack()
+
+    print ("goto glove nbsvm")
+    app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
+
     # print ("goto tfidf")
     # app_lbg(train, test)
 
