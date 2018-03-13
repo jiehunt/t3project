@@ -589,7 +589,8 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
 
         print('Total CV score is {}'.format(np.mean(scores)))
 
-        pred =pd.DataFrame(test)
+        pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred =pd.DataFrame(pred)
         pred.columns = class_names
         with timer("Predicting probabilities"):
             # Go through all classes and reuse computed number of rounds for each class
@@ -656,8 +657,8 @@ def app_stack():
         # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
     print("CV score:", np.mean(scores))
 
-    # out_file = 'output/submission_' + str(num_file) +'file.csv'
-    # sub.to_csv(out_file,index=False)
+    out_file = 'output/submission_' + str(num_file) +'file.csv'
+    sub.to_csv(out_file,index=False)
     return
 
 """"""""""""""""""""""""""""""
@@ -855,7 +856,8 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
         print('Total CV score is {}'.format(np.mean(scores)))
 
         # Use train for test
-        pred =pd.DataFrame(test)
+        pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred =pd.DataFrame(pred)
         pred.columns = class_names
 #
         with timer("Predicting test probabilities"):
@@ -933,7 +935,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # app_stack()
+    app_stack()
     # print ("goto tfidf")
     # app_lbg(train, test)
 
