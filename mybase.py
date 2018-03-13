@@ -895,7 +895,7 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
     params['gpu_id'] = 0
     params['max_bin'] = 16
     params['tree_method'] = 'gpu_hist'
-    # params['scale_pos_weight'] = 1
+    params['scale_pos_weight'] = 1
     params['seed'] = 27
 
     # Now go through folds
@@ -1019,7 +1019,7 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
-    model_type = 'nbsvm'
+    model_type = 'xgboost'
     feature_type = 'wtcs'
     if model_type == 'xgb':
         with timer ("get xgb model"):
@@ -1068,8 +1068,114 @@ def app_glove_nbsvm (train, test,embedding_path, feature_type, model_type):
 
     return
 
+def app_tfidf_rnn(train, test, embedding_path, model_type, feature_type):
+
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
+    test_text = test["comment_text"]
+    train_text = train["comment_text"]
+
+    splits = 3
+
+    max_len = 150
+    max_features = 100000
+    embed_size = 300
+
+    m_batch_size = 32
+    m_epochs = 3
+    m_verbose = 1
+    lr = 1e-3
+    lr_d = 0
+    units = 128
+    dr = 0.2
+    embedding_matrix = None
+    m_trainable = True
+
+    class_pred = np.ndarray(shape=(len(train), len(class_names)))
+
+    # with timer("get pretrain features for rnn"):
+    #     train_r,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
+    with timer ("load pretrained feature"):
+        train_r = load_sparse_csr('./trained_features/word_tchar_char_short_trn.npz')
+        test_r = load_sparse_csr('./trained_features/word_tchar_char_short_test.npz')
+
+    with timer("Goto Train RNN Model"):
+        folds = KFold(n_splits=splits, shuffle=True, random_state=1)
+
+        for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train_r, train_target)):
+
+            print ("goto %d fold :" % n_fold)
+            X_train_n = train_r[trn_idx]
+            Y_train_n = train_target.iloc[trn_idx]
+            X_valid_n = train_r[val_idx]
+            Y_valid_n = train_target.iloc[val_idx]
+
+            if model_type == 'gru': # gru
+                file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                                    X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+                                    m_trainable=m_trainable, lr=lr, lr_d = lr_d, units = units, dr = dr,
+                                    m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+            elif model_type == 'lstm': # lstm
+                file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                                X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+                                m_trainable=True, lr = lr, lr_d = lr_d, units = units, dr = dr,
+                                m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+
+            class_pred[val_idx] =pd.DataFrame(model.predict(X_valid_n))
+
+        oof_names = ['toxic_oof', 'severe_toxic_oof', 'obscene_oof', 'threat_oof', 'insult_oof', 'identity_hate_oof']
+        class_pred = pd.DataFrame(class_pred)
+        class_pred.columns = oof_names
+        train_oof = pd.concat([train,class_pred], axis = 1)
+        for class_name in class_names:
+            print("Class %s scores : " % class_name)
+            print("%.6f" % roc_auc_score(train_target[class_name], class_pred[class_name+"_oof"]))
+
+        # Save OOF predictions - may be interesting for stacking...
+        file_name = 'oof/'+str(model_type) + '_' + str(feature_type) + '_oof.csv'
+        train_oof[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(file_name,
+                                                                               index=False,
+                                                                               float_format="%.8f")
+
+        X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
+
+        # Use train for test
+        if model_type == 'gru': # gru
+            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
+            if os.path.exists(file_path):
+                model = load_model(file_path)
+            else:
+                model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                            X_valid, Y_valid, X_train,  Y_train, file_path,
+                            m_trainable=True, lr=lr, lr_d = lr_d, units = units, dr = dr,
+                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+        elif model_type == 'lstm': # lstm
+            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
+            if os.path.exists(file_path):
+                model = load_model(file_path)
+            else:
+                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                            X_valid, Y_valid, X_train,  Y_train, file_path,
+                            m_trainable=True, lr = lr, lr_d = lr_d, units = units, dr = dr,
+                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+
+        pred =pd.DataFrame(model.predict(test_r))
+        pred.columns = class_names
 
 
+        m_infile = './input/sample_submission.csv'
+        m_outfile = './oof_test/' + str(model_type) + '_' + str(feature_type)+ '_test_oof.csv'
+        m_make_single_submission(m_infile, m_outfile, m_pred)
+
+    return
 
 
 if __name__ == '__main__':
@@ -1084,8 +1190,8 @@ if __name__ == '__main__':
 
     # app_stack()
 
-    print ("goto glove nbsvm")
-    app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
+    # print ("goto glove nbsvm")
+    # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
 
     # print ("goto tfidf")
     # app_lbg(train, test)
@@ -1095,6 +1201,10 @@ if __name__ == '__main__':
     # app_rnn(train, test, glove_embedding_path, 'glove', model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
+    print ("goto tfidf rnn")
+    model_type = 'gru'
+    feature_type = 'tfidf'
+    app_tfidf_rnn(train, test, None, model_type, feature_type)
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
