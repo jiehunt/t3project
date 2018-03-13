@@ -1042,6 +1042,7 @@ def app_glove_nbsvm (train, test,embedding_path, feature_type, model_type):
     test_text = test["comment_text"]
     train_text = train["comment_text"]
 
+
     splits = 3
     max_len = 150
     max_features = 100000
@@ -1068,12 +1069,12 @@ def app_glove_nbsvm (train, test,embedding_path, feature_type, model_type):
 
     return
 
-def app_tfidf_rnn(train, test, embedding_path, model_type, feature_type):
+def app_token_rnn(train, test, embedding_path, model_type, feature_type):
 
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     train_target = train[class_names]
-    test_text = test["comment_text"]
-    train_text = train["comment_text"]
+    test_text = test["comment_text"].fillna("jiehunt").values
+    train_text = train["comment_text"].fillna("jiehunt").values
 
     splits = 3
 
@@ -1095,9 +1096,17 @@ def app_tfidf_rnn(train, test, embedding_path, model_type, feature_type):
 
     # with timer("get pretrain features for rnn"):
     #     train_r,test, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
-    with timer ("load pretrained feature"):
-        train_r = load_sparse_csr('./trained_features/word_tchar_char_short_trn.npz')
-        test_r = load_sparse_csr('./trained_features/word_tchar_char_short_test.npz')
+    # with timer ("load pretrained feature"):
+    #     train_r = load_sparse_csr('./trained_features/word_tchar_char_short_trn.npz')
+    #     test_r = load_sparse_csr('./trained_features/word_tchar_char_short_test.npz')
+
+    with timer("prepare tokenizer features"):
+        tokenizer = text.Tokenizer(num_words=max_features)
+        tokenizer.fit_on_texts(list(train_text))
+        list_tokenized_train = tokenizer.texts_to_sequences(train_text)
+        list_tokenized_test = tokenizer.texts_to_sequences(test_text)
+        train_r = sequence.pad_sequences(list_tokenized_train, maxlen=max_len)
+        test_r = sequence.pad_sequences(list_tokenized_test, maxlen=max_len)
 
     with timer("Goto Train RNN Model"):
         folds = KFold(n_splits=splits, shuffle=True, random_state=1)
@@ -1203,8 +1212,8 @@ if __name__ == '__main__':
 
     print ("goto tfidf rnn")
     model_type = 'gru'
-    feature_type = 'tfidf'
-    app_tfidf_rnn(train, test, None, model_type, feature_type)
+    feature_type = 'token'
+    app_token_rnn(train, test, None, model_type, feature_type)
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
