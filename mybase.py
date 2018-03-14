@@ -960,7 +960,7 @@ def app_single_lgb(csr_trn, csr_sub, train, test, feature_type):
                             gpu_device_id = params["gpu_device_id"],
                             max_bin=params["max_bin"]
                             ) ,
-                            param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
+                            param_grid=param_test, scoring='roc_auc', n_jobs=1, iid=False, cv=3, verbose=2)
 
 
     with timer("goto tuning lgb_wight"):
@@ -981,7 +981,7 @@ def app_single_xgb(csr_trn, csr_sub, train, test, feature_type):
     # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
 
     param_test1 = {
-        'max_depth': [6,8, 10],
+        'max_depth': [4,7, 10],
         'min_child_weight': [4,7, 10]
     }
     param_test2 = {
