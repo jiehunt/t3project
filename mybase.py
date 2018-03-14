@@ -879,6 +879,163 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
     return pred
 
+def h_tuning_xgb(train, train_target,tune_dict, param_test):
+
+    param_dict = {
+       'learning_rate' : 0.1,
+       'n_estimators'  : 1000,
+       'max_depth' : 4,
+       'min_child_weight':8,
+       'gamma':0,
+       'subsample':0.8,
+       'colsample_bytree':0.8,
+       'reg_alpha':0,
+    }
+    param_dict = tune_dict
+
+    gsearch = GridSearchCV(estimator=XGBClassifier(learning_rate=param_dict['learning_rate'],
+                                                    n_estimators=param_dict['n_estimators'],
+                                                    max_depth=param_dict['max_depth'],
+                                                    min_child_weight=param_dict['min_child_weight'],
+                                                    gamma=param_dict['gamma'],
+                                                    subsample=param_dict['subsample'],
+                                                    colsample_bytree=param_dict['colsample_bytree'],
+                                                    reg_alpha=param_dict['reg_alpha'],
+                                                    gpu_id=0,
+                                                    max_bin = 16,
+                                                    tree_method = 'gpu_hist',
+                                                    objective='binary:logistic',
+                                                    nthread=4, scale_pos_weight=1,
+                                                    seed=27),
+                                                    param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
+
+    with timer("goto serch max_depth and min_child_wight"):
+        gsearch.fit(train, train_target)
+        print (gsearch.grid_scores_ )
+        print (gsearch.best_params_ )
+        print (gsearch.best_score_)
+        return gsearch.best_params_
+
+
+def app_single_lgb(csr_trn, csr_sub, train, test, feature_type):
+
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
+    train_r = csr_trn
+    params = {
+        "objective": "binary",
+        "metric": {'auc'},
+        "boosting_type": "gbdt",
+        "verbosity": -1,
+        "num_threads": 4,
+        "bagging_fraction": 0.8,
+        "feature_fraction": 0.8,
+        "learning_rate": 0.1,
+        "num_leaves": 31,
+        "verbose": -1,
+        "min_split_gain": .1,
+        "reg_alpha": .1,
+        "device": "gpu",
+        "gpu_platform_id": 0,
+        "gpu_device_id": 0,
+        "max_bin": 63
+    }
+    param_test1 = {
+        'num_leaves':[ i for i in range(28, 32)],
+    }
+    param_test = param_test1
+
+    gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective=params["objective"], metric=params["metric"],
+                            verbosity=params["verbosity"],
+                            num_threads = params["num_threads"],
+                            bagging_fraction= params["bagging_fraction"],
+                            feature_fraction = params["feature_fraction"],
+                            learning_rate =params["learning_rate"],
+                            num_leaves = params["num_leaves"],
+                            verbose = params["verbose"],
+                            min_split_gain = params["min_split_gain"],
+                            reg_alpha=params["reg_alpha"],
+                            device = params["device"],
+                            gpu_platform_id=params["gpu_platform_id"],
+                            gpu_device_id = params["gpu_device_id"],
+                            max_bin=params["max_bin"]
+                            ) ,
+                            param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=2)
+
+
+    with timer("goto tuning lgb_wight"):
+        gsearch.fit(train_r, train_target['toxic'])
+        print (gsearch.grid_scores_ )
+        print (gsearch.best_params_ )
+        print (gsearch.best_score_)
+
+    return
+
+
+def app_single_xgb(csr_trn, csr_sub, train, test, feature_type):
+
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
+    train_r = csr_trn
+
+    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
+
+    param_test1 = {
+        'max_depth': [6,8, 10],
+        'min_child_weight': [4,7, 10]
+    }
+    param_test2 = {
+        'gamma': [i / 10.0 for i in range(0, 5)]
+    }
+    param_test3 = {
+        'subsample': [i / 10.0 for i in range(6, 10)],
+        'colsample_bytree': [i / 10.0 for i in range(6, 10)]
+    }
+    param_test4 = {
+        'subsample': [i / 100.0 for i in range(55, 75, 5)],
+        'colsample_bytree': [i / 100.0 for i in range(55, 75, 5)]
+    }
+    param_test5 = {
+        'reg_alpha': [1e-5, 1e-2, 0.1, 1, 100]
+    }
+    param_test6 = {
+        'learning_rate': [0.001, 0.01, 0.05, 0.1]
+    }
+    param_test7 = {
+        'n_estimators': [1000,2000,3000,4000,5000]
+    }
+
+    param_set = [
+        param_test1,
+        param_test2,
+        param_test3,
+        param_test4,
+        param_test5,
+        param_test6,
+        param_test7
+    ]
+
+    param_dict = {
+        'learning_rate' : 0.1,
+        'n_estimators'  : 1000,
+        'max_depth' : 4,
+        'min_child_weight':8,
+        'gamma':0,
+        'subsample':0.9,
+        'colsample_bytree':0.6,
+        'reg_alpha':0,
+    }
+    for param in param_set:
+        with timer("goto serch max_depth and min_child_wight"):
+            best_param = h_tuning_xgb(train_r, train_target['toxic'],param_dict, param)
+
+        for key in param_dict:
+            for key2 in best_param:
+                if key == key2:
+                    param_dict[key] = best_param[key2]
+                    print ("change %s to %d" % key, best_param[key2])
+    return param_dict
+
 def app_train_xgb(csr_trn, csr_sub, train, test, feature_type):
     import gc
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
@@ -1037,6 +1194,35 @@ def app_lbg (train, test):
     m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
+
+def app_tfidf_xbg (train, test):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    # test_r = test
+    # with timer("Performing basic NLP"):
+    #     get_indicators_and_clean_comments(train)
+    #     get_indicators_and_clean_comments(test_r)
+
+    # with timer ("gen tfidf features"):
+    #     csr_trn, csr_sub =  f_gen_tfidf_features(train, test)
+
+    # print (type(csr_trn))
+    # save_sparse_csr('word_tchar_trn.csr',csr_trn)
+    # save_sparse_csr('word_tchar_test.csr',csr_sub)
+
+    with timer ("load pretrained feature"):
+        csr_trn_1 = load_sparse_csr('./trained_features/word_tchar_char_short_trn.npz')
+        csr_sub_1 = load_sparse_csr('./trained_features/word_tchar_char_short_test.npz')
+
+    drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
+    train.drop(drop_f, axis=1, inplace=True)
+
+    print (csr_trn_1.shape)
+    param = app_single_xgb(csr_trn_1, csr_sub_1,train, test, feature_type)
+    for k in param:
+        print ("%s : %.1f" % (k, param[k]))
+
+    return
+
 
 def app_glove_nbsvm (train, test,embedding_path, feature_type, model_type):
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
@@ -1237,13 +1423,6 @@ def app_glove_lgb (train, test,embedding_path, feature_type, model_type):
     max_len = 150
     max_features = 100000
     embed_size = 300
-    m_batch_size = 32
-    m_epochs = 3
-    m_verbose = 1
-    lr = 1e-3
-    lr_d = 0
-    units = 128
-    dr = 0.2
 
     model_type = 'xgb'
     feature_type = 'glove'
@@ -1254,11 +1433,13 @@ def app_glove_lgb (train, test,embedding_path, feature_type, model_type):
     with timer("get pretrain features for rnn"):
         train_r,test_r, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
 
-    pred =  app_train_nbsvm(train_r, test_r,train, test, feature_type)
+    print (type(train_r))
+    print (train_r.shape)
 
-    m_infile = './input/sample_submission.csv'
-    m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
-    m_make_single_submission(m_infile, m_outfile, pred)
+    # app_single_lgb(train_r, test_r,train, test, feature_type)
+    # m_infile = './input/sample_submission.csv'
+    # m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
+    # m_make_single_submission(m_infile, m_outfile, pred)
 
     return
 
@@ -1274,7 +1455,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    app_stack()
+    # app_stack()
 
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
@@ -1289,9 +1470,13 @@ if __name__ == '__main__':
 
     # print ("goto tfidf rnn")
     model_type = 'xgb'
-    feature_type = 'token'
+    feature_type = 'glove'
     # app_token_rnn(train, test, None, model_type, feature_type)
-    app_token_lgb(train, test, model_type, feature_type)
+    # app_token_lgb(train, test, model_type, feature_type)
+
+    # app_glove_lgb (train, test,glove_embedding_path, feature_type, model_type)
+
+    app_tfidf_xbg (train, test)
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
