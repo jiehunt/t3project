@@ -1196,6 +1196,11 @@ def app_token_lgb(train, test, model_type, feature_type):
     train_text = train["comment_text"].fillna("jiehunt").values
 
     splits = 3
+    max_len = 150
+    max_features = 100000
+
+    drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
+    train.drop(drop_f, axis=1, inplace=True)
 
     class_pred = np.ndarray(shape=(len(train), len(class_names)))
 
@@ -1222,6 +1227,42 @@ def app_token_lgb(train, test, model_type, feature_type):
     m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
+def app_glove_lgb (train, test,embedding_path, feature_type, model_type):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
+    test_text = test["comment_text"]
+    train_text = train["comment_text"]
+
+    splits = 3
+    max_len = 150
+    max_features = 100000
+    embed_size = 300
+    m_batch_size = 32
+    m_epochs = 3
+    m_verbose = 1
+    lr = 1e-3
+    lr_d = 0
+    units = 128
+    dr = 0.2
+
+    model_type = 'xgb'
+    feature_type = 'glove'
+
+    drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
+    train.drop(drop_f, axis=1, inplace=True)
+
+    with timer("get pretrain features for rnn"):
+        train_r,test_r, embedding_matrix = f_get_pretraind_features(train_text, test_text, embed_size, embedding_path,max_features, max_len)
+
+    pred =  app_train_nbsvm(train_r, test_r,train, test, feature_type)
+
+    m_infile = './input/sample_submission.csv'
+    m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
+    m_make_single_submission(m_infile, m_outfile, pred)
+
+    return
+
+
 
 if __name__ == '__main__':
     train = pd.read_csv('./input/train.csv').fillna(' ')
@@ -1247,9 +1288,10 @@ if __name__ == '__main__':
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
     # print ("goto tfidf rnn")
-    # model_type = 'lstm'
-    # feature_type = 'token'
+    model_type = 'xgb'
+    feature_type = 'token'
     # app_token_rnn(train, test, None, model_type, feature_type)
+    app_token_lgb(train, test, model_type, feature_type)
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
