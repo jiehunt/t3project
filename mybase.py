@@ -1182,7 +1182,7 @@ def app_token_rnn(train, test, embedding_path, model_type, feature_type):
 
         m_infile = './input/sample_submission.csv'
         m_outfile = './oof_test/' + str(model_type) + '_' + str(feature_type)+ '_test_oof.csv'
-        m_make_single_submission(m_infile, m_outfile, m_pred)
+        m_make_single_submission(m_infile, m_outfile, pred)
 
     return
 
@@ -1197,7 +1197,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # app_stack()
+    app_stack()
 
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
@@ -1210,10 +1210,10 @@ if __name__ == '__main__':
     # app_rnn(train, test, glove_embedding_path, 'glove', model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
-    print ("goto tfidf rnn")
-    model_type = 'gru'
-    feature_type = 'token'
-    app_token_rnn(train, test, None, model_type, feature_type)
+    # print ("goto tfidf rnn")
+    # model_type = 'lstm'
+    # feature_type = 'token'
+    # app_token_rnn(train, test, None, model_type, feature_type)
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
