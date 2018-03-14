@@ -514,7 +514,7 @@ def m_lstm_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
     model = load_model(m_file_path)
     return model
 
-def m_lgb_model(csr_trn, csr_sub, train, test):
+def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
 
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     # Set LGBM parameters
@@ -584,7 +584,8 @@ def m_lgb_model(csr_trn, csr_sub, train, test):
             train[class_name + "_oof"] = class_pred
 
         # Save OOF predictions - may be interesting for stacking...
-        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("oof/lgbm_clean_oof.csv",
+        file_name = 'oof/'+ 'lgb_'+str(feature_type) + '_oof.csv'
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(file_name,
                                                                                index=False,
                                                                                float_format="%.8f")
 
@@ -878,7 +879,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
     return pred
 
-def app_train_xgb(csr_trn, csr_sub, train, test):
+def app_train_xgb(csr_trn, csr_sub, train, test, feature_type):
     import gc
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     # Set LGBM parameters
@@ -958,7 +959,8 @@ def app_train_xgb(csr_trn, csr_sub, train, test):
             gc.collect()
 
         # Save OOF predictions - may be interesting for stacking...
-        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv("oof/xgb_oof.csv",
+        file_name = 'oof/'+ 'xgb_'+str(feature_type) + '_oof.csv'
+        train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(file_name,
                                                                                index=False,
                                                                                float_format="%.8f")
 
@@ -1023,10 +1025,10 @@ def app_lbg (train, test):
     feature_type = 'wtcs'
     if model_type == 'xgb':
         with timer ("get xgb model"):
-            m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test)
+            m_pred = app_train_xgb(csr_trn_1, csr_sub_1, train, test, feature_type)
     elif model_type == 'lgb':
         with timer ("get lgb model"):
-            m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test)
+            m_pred = m_lgb_model(csr_trn_1, csr_sub_1, train, test, feature_type)
     elif model_type == 'nbsvm':
         with timer ("get nbsvm model"):
             m_pred = app_train_nbsvm(csr_trn_1, csr_sub_1, train, test, feature_type)
@@ -1184,6 +1186,40 @@ def app_token_rnn(train, test, embedding_path, model_type, feature_type):
         m_outfile = './oof_test/' + str(model_type) + '_' + str(feature_type)+ '_test_oof.csv'
         m_make_single_submission(m_infile, m_outfile, pred)
 
+    return
+
+def app_token_lgb(train, test, model_type, feature_type):
+
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_target = train[class_names]
+    test_text = test["comment_text"].fillna("jiehunt").values
+    train_text = train["comment_text"].fillna("jiehunt").values
+
+    splits = 3
+
+    class_pred = np.ndarray(shape=(len(train), len(class_names)))
+
+    with timer("prepare tokenizer features"):
+        tokenizer = text.Tokenizer(num_words=max_features)
+        tokenizer.fit_on_texts(list(train_text))
+        list_tokenized_train = tokenizer.texts_to_sequences(train_text)
+        list_tokenized_test = tokenizer.texts_to_sequences(test_text)
+        train_r = sequence.pad_sequences(list_tokenized_train, maxlen=max_len)
+        test_r = sequence.pad_sequences(list_tokenized_test, maxlen=max_len)
+
+    if model_type == 'xgb':
+        with timer ("get xgb model"):
+            m_pred = app_train_xgb(train_r, test_r, train, test, feature_type)
+    elif model_type == 'lgb':
+        with timer ("get lgb model"):
+            m_pred = m_lgb_model(train_r, test_r, train, test, feature_type)
+    elif model_type == 'nbsvm':
+        with timer ("get nbsvm model"):
+            m_pred = app_train_nbsvm(train_r, test_r, train, test, feature_type)
+
+    m_infile = './input/sample_submission.csv'
+    m_outfile = './oof_test/' + str(model_type) + str(feature_type)+ '_test_oof.csv'
+    m_make_single_submission(m_infile, m_outfile, m_pred)
     return
 
 
