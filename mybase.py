@@ -555,7 +555,7 @@ def m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
     history = model.fit(X_train, Y_train, batch_size = m_batch_size, epochs = m_epochs, validation_data = (X_valid, Y_valid),
                         verbose = m_verbose, callbacks = [ra_val, check_point, early_stop])
 
-    model = load_model(m_file_path)
+    # model = load_model(m_file_path)
     return model
 
 
@@ -955,10 +955,10 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
             elif model_type == 'capgru':
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                if os.path.exists(file_path):
-                    model = load_model(file_path)
-                else:
-                    model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                # if os.path.exists(file_path):
+                #     model = load_model(file_path)
+                # else:
+                model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
@@ -1003,10 +1003,10 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                             m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
         elif model_type == 'capgru': # lstm
             file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
-            if os.path.exists(file_path):
-                model = load_model(file_path)
-            else:
-                model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
+            # if os.path.exists(file_path):
+            #     model = load_model(file_path)
+            # else:
+            model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
                             X_valid, Y_valid, X_train,  Y_train, file_path,
                             m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                             m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
