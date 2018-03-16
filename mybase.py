@@ -1603,8 +1603,8 @@ if __name__ == '__main__':
 
     # print ("goto rnn")
     model_type = 'capgru' # gru
-    feature_type = 'fast'
-    app_rnn(train, test, glove_embedding_path, 'glove', model_type)
+    feature_type = 'glove'
+    app_rnn(train, test, glove_embedding_path, feature_type, model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
     # print ("goto tfidf rnn")
