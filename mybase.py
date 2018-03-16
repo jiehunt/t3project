@@ -1603,9 +1603,12 @@ if __name__ == '__main__':
 
     # print ("goto rnn")
     model_type = 'capgru' # gru
-    feature_type = 'glove'
-    app_rnn(train, test, glove_embedding_path, feature_type, model_type)
-    # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
+    feature_type = 'fast'
+    if feature_type == 'glove':
+        embedding_path = glove_embedding_path
+    elif feature_type == 'fast':
+        embedding_path = fasttext_embedding_path
+    app_rnn(train, test, embedding_path, feature_type, model_type)
 
     # print ("goto tfidf rnn")
     # model_type = 'nbsvm'
