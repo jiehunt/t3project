@@ -444,6 +444,121 @@ def f_gen_tfidf_features(train, test):
 """"""""""""""""""""""""""""""
 # Model
 """"""""""""""""""""""""""""""
+def squash(x, axis=-1):
+    # s_squared_norm is really small
+    # s_squared_norm = K.sum(K.square(x), axis, keepdims=True) + K.epsilon()
+    # scale = K.sqrt(s_squared_norm)/ (0.5 + s_squared_norm)
+    # return scale * x
+    s_squared_norm = K.sum(K.square(x), axis, keepdims=True)
+    scale = K.sqrt(s_squared_norm + K.epsilon())
+    return x / scale
+
+
+# A Capsule Implement with Pure Keras
+class Capsule(Layer):
+    def __init__(self, num_capsule, dim_capsule, routings=3, kernel_size=(9, 1), share_weights=True,
+                 activation='default', **kwargs):
+        super(Capsule, self).__init__(**kwargs)
+        self.num_capsule = num_capsule
+        self.dim_capsule = dim_capsule
+        self.routings = routings
+        self.kernel_size = kernel_size
+        self.share_weights = share_weights
+        if activation == 'default':
+            self.activation = squash
+        else:
+            self.activation = Activation(activation)
+
+    def build(self, input_shape):
+        super(Capsule, self).build(input_shape)
+        input_dim_capsule = input_shape[-1]
+        if self.share_weights:
+            self.W = self.add_weight(name='capsule_kernel',
+                                     shape=(1, input_dim_capsule,
+                                            self.num_capsule * self.dim_capsule),
+                                     # shape=self.kernel_size,
+                                     initializer='glorot_uniform',
+                                     trainable=True)
+        else:
+            input_num_capsule = input_shape[-2]
+            self.W = self.add_weight(name='capsule_kernel',
+                                     shape=(input_num_capsule,
+                                            input_dim_capsule,
+                                            self.num_capsule * self.dim_capsule),
+                                     initializer='glorot_uniform',
+                                     trainable=True)
+
+    def call(self, u_vecs):
+        if self.share_weights:
+            u_hat_vecs = K.conv1d(u_vecs, self.W)
+        else:
+            u_hat_vecs = K.local_conv1d(u_vecs, self.W, [1], [1])
+
+        batch_size = K.shape(u_vecs)[0]
+        input_num_capsule = K.shape(u_vecs)[1]
+        u_hat_vecs = K.reshape(u_hat_vecs, (batch_size, input_num_capsule,
+                                            self.num_capsule, self.dim_capsule))
+        u_hat_vecs = K.permute_dimensions(u_hat_vecs, (0, 2, 1, 3))
+        # final u_hat_vecs.shape = [None, num_capsule, input_num_capsule, dim_capsule]
+
+        b = K.zeros_like(u_hat_vecs[:, :, :, 0])  # shape = [None, num_capsule, input_num_capsule]
+        for i in range(self.routings):
+            b = K.permute_dimensions(b, (0, 2, 1))  # shape = [None, input_num_capsule, num_capsule]
+            c = K.softmax(b)
+            c = K.permute_dimensions(c, (0, 2, 1))
+            b = K.permute_dimensions(b, (0, 2, 1))
+            outputs = self.activation(K.batch_dot(c, u_hat_vecs, [2, 2]))
+            if i < self.routings - 1:
+                b = K.batch_dot(outputs, u_hat_vecs, [2, 3])
+
+        return outputs
+
+    def compute_output_shape(self, input_shape):
+        return (None, self.num_capsule, self.dim_capsule)
+
+def m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                X_valid, Y_valid, X_train, Y_train, m_file_path,
+                m_trainable = False,lr = 0.0, lr_d = 0.0, units = 0, dr = 0.0,
+                m_batch_size = 128, m_epochs = 4, m_verbose = 1,
+                m_num_capsule = 10, m_dim_capsule = 16,m_routings = 5,
+                ):
+
+    input1 = Input(shape=(max_len,))
+    embed_layer = Embedding(max_features,
+                            embed_size,
+                            input_length=max_len,
+                            weights=[embedding_matrix],
+                            trainable=m_trainable)(input1)
+    embed_layer = SpatialDropout1D(dr)(embed_layer)
+
+    x = Bidirectional(
+        GRU(units, activation='relu', dropout=dr, recurrent_dropout=dr, return_sequences=True))(
+        embed_layer)
+    capsule = Capsule(num_capsule=m_num_capsule, dim_capsule=m_dim_capsule, routings=m_routings,
+                      share_weights=True)(x)
+    # output_capsule = Lambda(lambda x: K.sqrt(K.sum(K.square(x), 2)))(capsule)
+    capsule = Flatten()(capsule)
+    capsule = Dropout(dr)(capsule)
+    output = Dense(6, activation='sigmoid')(capsule)
+    model = Model(inputs=input1, outputs=output)
+    model.compile(
+        loss='binary_crossentropy',
+        optimizer='adam',
+        metrics=['accuracy'])
+    model.summary()
+
+    check_point = ModelCheckpoint(m_file_path, monitor = "val_loss", verbose = 1,
+                                  save_best_only = True, mode = "min")
+    ra_val = RocAucEvaluation(validation_data=(X_valid, Y_valid), interval = 1)
+    early_stop = EarlyStopping(monitor = "val_loss", mode = "min", patience = 5)
+
+    history = model.fit(X_train, Y_train, batch_size = m_batch_size, epochs = m_epochs, validation_data = (X_valid, Y_valid),
+                        verbose = m_verbose, callbacks = [ra_val, check_point, early_stop])
+
+    model = load_model(m_file_path)
+    return model
+
+
 def m_gru_model(m_max_len, m_max_features, m_embed_size, m_embedding_matrix,
                 X_valid, Y_valid, X_train, Y_train, m_file_path,
                 m_trainable = False,lr = 0.0, lr_d = 0.0, units = 0, dr = 0.0,
@@ -635,14 +750,17 @@ class my_nbsvm:
     def fit(self, X, y):
         y = y.values
         self.r = np.log(m_pr(X, 1,y) / m_pr(X, 0,y))
-        x_nb = X.multiply(self.r)
+        x_nb = np.multiply(X, self.r)
+        # x_nb = X.multiply(self.r)
         return self.model.fit(x_nb, y)
 
     def predict(self, X):
-        return self.model.predict(X.multiply(self.r))
+        return self.model.predict(np.multiply(X, self.r) )
+        # return self.model.predict(X.multiply(self.r))
 
     def predict_proba(self,X):
-        return self.model.predict_proba(X.multiply(self.r))
+        return self.model.predict_proba(np.multiply(X, self.r))
+        # return self.model.predict_proba(X.multiply(self.r))
 
     def get_params(self, deep):
         return self.model.get_params(deep=deep)
@@ -835,6 +953,16 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+            elif model_type == 'capgru':
+                file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                                X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
+                                m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+                                m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+
 
             class_pred[val_idx] =pd.DataFrame(model.predict(X_valid_n))
 
@@ -873,6 +1001,16 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                             X_valid, Y_valid, X_train,  Y_train, file_path,
                             m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                             m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+        elif model_type == 'capgru': # lstm
+            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
+            if os.path.exists(file_path):
+                model = load_model(file_path)
+            else:
+                model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                            X_valid, Y_valid, X_train,  Y_train, file_path,
+                            m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+
 
         pred =pd.DataFrame(model.predict(test))
         pred.columns = class_names
@@ -1464,19 +1602,20 @@ if __name__ == '__main__':
     # app_lbg(train, test)
 
     # print ("goto rnn")
-    # model_type = 'gru' # gru
-    # app_rnn(train, test, glove_embedding_path, 'glove', model_type)
+    model_type = 'capgru' # gru
+    feature_type = 'fast'
+    app_rnn(train, test, glove_embedding_path, 'glove', model_type)
     # app_rnn(train, test, fasttext_embedding_path, 'fast', model_type)
 
     # print ("goto tfidf rnn")
-    model_type = 'xgb'
-    feature_type = 'glove'
+    # model_type = 'nbsvm'
+    # feature_type = 'token'
     # app_token_rnn(train, test, None, model_type, feature_type)
     # app_token_lgb(train, test, model_type, feature_type)
 
     # app_glove_lgb (train, test,glove_embedding_path, feature_type, model_type)
 
-    app_tfidf_xbg (train, test)
+    # app_tfidf_xbg (train, test)
 
 """"""""""""""""""""""""""""""
 # Ganerate Result
