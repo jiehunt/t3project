@@ -786,39 +786,44 @@ def app_tune_stack():
     train_target = train[class_names]
 
     param_test1 = {
-        'max_depth': [-1, 3, 4, 5],
+        'max_depth': [4,5, 6,7,8 ],
         #'num_leaves': [i for i in range(6,16)]
-        'num_leaves': [6, 9, 12, 15]
+        'num_leaves': [18, 20, 21, 22]
     }
     param_test2 = {
-        'gamma': [i / 10.0 for i in range(0, 5)]
+        'feature_fraction': [i / 10.0 for i in range(1, 10)]
     }
     param_test3 = {
-        'subsample': [i / 10.0 for i in range(6, 10)],
-        'colsample_bytree': [i / 10.0 for i in range(6, 10)]
+        'min_data_in_leaf': [18, 20, 22, 24],
+        'min_sum_hessian_in_leaf': [i / 10000.0 for i in range(10, 100, 10)]
     }
     param_test4 = {
-        'subsample': [i / 100.0 for i in range(55, 75, 5)],
-        'colsample_bytree': [i / 100.0 for i in range(55, 75, 5)]
+        'learning_rate': [0.01, 0.1, 0.3,0.4, 0.5,0.6,0.7,0.8,1],
     }
     param_test5 = {
-        'reg_alpha': [1e-5, 1e-2, 0.1, 1, 100]
+        'bagging_fraction': [ i / 10 for i in range(1, 10)],
+        'bagging_freq': [0, 5, 10, 20, 50 ]
     }
     param_test6 = {
-        'learning_rate': [0.001, 0.01, 0.05, 0.1]
+        'reg_alpha': [ i / 10 for i in range(0, 10)],
+        'reg_lambda': [ i / 10 for i in range(0, 10)]
     }
     param_test7 = {
-        'n_estimators': [1000,2000,3000,4000,5000]
+        'max_bin': [26,25,24,23,22]
+    }
+    param_test8 = {
+        'min_split_gain': [ i / 10 for i in range(1, 5)]
     }
 
     param_set = [
-        param_test1,
+        # param_test1,
         # param_test2,
         # param_test3,
         # param_test4,
         # param_test5,
         # param_test6,
-        # param_test7
+        # param_test7,
+        param_test8,
     ]
 
     param_dict = {
@@ -827,22 +832,22 @@ def app_tune_stack():
         "boosting_type": "gbdt",
         "num_threads": 4,
 
-        "num_leaves": 31,
-        "max_depth": -1,
+        "num_leaves": 21,
+        "max_depth": 5,
 
-        "feature_fraction": 1,
-        "min_data_in_leaf":20,
-        "min_sum_hessian_in_leaf":.001,
-        "learning_rate": 0.1,
+        "feature_fraction": .1,
+        "min_data_in_leaf":22,
+        "min_sum_hessian_in_leaf":.004,
+        "learning_rate": 0.5,
 
-        "bagging_fraction": 1,
+        "bagging_fraction": .8,
         "bagging_freq":0,
 
-        "reg_alpha": 0,
-        "reg_lambda": 0,
+        "reg_alpha": .9,
+        "reg_lambda": .8,
 
-        "max_bin": 255,
-        "min_split_gain":.1,
+        "max_bin": 24,
+        "min_split_gain":.3,
         "verbose": -1,
         "device": "gpu",
         "gpu_platform_id": 0,
@@ -870,9 +875,9 @@ def app_tune_stack():
             for key2 in best_param:
                 if key == key2:
                     param_dict[key] = best_param[key2]
-                    print ("change %s to %d" % (key, best_param[key2]))
+                    print ("change %s to %f" % (key, best_param[key2]))
 
-    print (best_param)
+    # print (param_dict)
 
     return
 
@@ -891,14 +896,63 @@ def app_stack():
     train = h_prepare_data_train(train_list)
     test = h_prepare_data_test(test_list)
 
+    param_dict = {
+        "objective": "binary",
+        "metric": {'auc'},
+        "boosting_type": "gbdt",
+        "num_threads": 4,
+
+        "num_leaves": 21,
+        "max_depth": 5,
+
+        "feature_fraction": .1,
+        "min_data_in_leaf":22,
+        "min_sum_hessian_in_leaf":.004,
+        "learning_rate": 0.5,
+
+        "bagging_fraction": .8,
+        "bagging_freq":0,
+
+        "reg_alpha": .9,
+        "reg_lambda": .8,
+
+        "max_bin": 24,
+        "min_split_gain":.3,
+        "verbose": -1,
+        "device": "gpu",
+        "gpu_platform_id": 0,
+        "gpu_device_id": 0,
+    }
+
+    params = param_dict
+
     # stacker = LogisticRegression()
     # stacker = xgb.XGBClassifier()
     stacker = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
                                  # feature_fraction=0.45,bagging_fraction=0.8, bagging_freq=5,  verbose=-1)
+    # stacker = lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
+    #                         num_threads = 4,
+    #                         num_leaves = params["num_leaves"],
+    #                         max_depth =  params["max_depth"],
+    #                         feature_fraction = params["feature_fraction"],
+    #                         min_data_in_leaf = params["min_data_in_leaf"],
+    #                         min_sum_hessian_in_leaf = params["min_sum_hessian_in_leaf"],
+    #                         learning_rate =params["learning_rate"],
+    #                         bagging_fraction= params["bagging_fraction"],
+    #                         bagging_freq = params["bagging_freq"],
+    #                         max_bin=params["max_bin"],
+    #                         min_split_gain = params["min_split_gain"],
+    #                         reg_alpha=params["reg_alpha"],
+    #                         reg_lambda=params["reg_lambda"],
+    #                         # device = 'gpu',
+    #                         # gpu_platform_id=0,
+    #                         # gpu_device_id = 0,
+    #                         )
 
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
+
     # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # for class_name in class_names:
     #     y_target = Y_train[class_name]
@@ -919,8 +973,8 @@ def app_stack():
         scores.append(np.mean(score))
         stacker.fit(X_train, Y_train[label])
         sub[label] = stacker.predict_proba(test)[:,1]
-        #trn_pred = stacker.predict_proba(X_valid)[:,1]
-        #print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
+        # trn_pred = stacker.predict_proba(X_valid)[:,1]
+        # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
     print("CV score:", np.mean(scores))
 
     out_file = 'output/submission_' + str(num_file) +'file.csv'
@@ -1176,7 +1230,7 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
 
     params = tune_dict
     gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
-                            num_threads = 4,
+                            # num_threads = 4,
                             num_leaves = params["num_leaves"],
                             max_depth =  params["max_depth"],
                             feature_fraction = params["feature_fraction"],
@@ -1193,7 +1247,7 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
                             gpu_platform_id=0,
                             gpu_device_id = 0,
                             ) ,
-                            param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=3, verbose=2)
+                            param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=1)
 
     with timer("goto tuning lgb_wight"):
         gsearch.fit(train, train_target)
@@ -1695,8 +1749,8 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    app_tune_stack()
-    # app_stack()
+    # app_tune_stack()
+    app_stack()
 
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
