@@ -54,7 +54,7 @@ from contextlib import contextmanager
 
 from collections import defaultdict
 
-# import lightgbm as lgb
+import lightgbm as lgb
 import xgboost as xgb
 from xgboost.sklearn import XGBClassifier
 
@@ -95,8 +95,8 @@ def h_get_train_test_list():
        train_list.append(f)
        # oof_path = str(f).split('\\')[0]
        # oof_file = str(f).split('\\')[1]
-       oof_path = str(f).split('/')[0]
-       oof_file = str(f).split('/')[1]
+       oof_path = str(f).split('\\')[0]
+       oof_file = str(f).split('\\')[1]
        oof_test_pre = str(oof_file).split('oof')[0]
        test_file = str(oof_path) + '_test/'+str(oof_test_pre) + 'test_oof.csv'
        test_list.append(test_file)
@@ -770,6 +770,90 @@ class my_nbsvm:
 """"""""""""""""""""""""""""""
 # Stacking
 """"""""""""""""""""""""""""""
+def app_tune_stack():
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    sub = pd.read_csv('./input/sample_submission.csv')
+
+    train_list, test_list =  h_get_train_test_list()
+    num_file = len(train_list)
+
+    train = h_prepare_data_train(train_list)
+    test = h_prepare_data_test(test_list)
+    train_target = train[class_names]
+
+    param_test1 = {
+        'max_depth': [4,5 ,6],
+        'num_leaves': [i for i in range(9, 21)]
+    }
+    param_test2 = {
+        'gamma': [i / 10.0 for i in range(0, 5)]
+    }
+    param_test3 = {
+        'subsample': [i / 10.0 for i in range(6, 10)],
+        'colsample_bytree': [i / 10.0 for i in range(6, 10)]
+    }
+    param_test4 = {
+        'subsample': [i / 100.0 for i in range(55, 75, 5)],
+        'colsample_bytree': [i / 100.0 for i in range(55, 75, 5)]
+    }
+    param_test5 = {
+        'reg_alpha': [1e-5, 1e-2, 0.1, 1, 100]
+    }
+    param_test6 = {
+        'learning_rate': [0.001, 0.01, 0.05, 0.1]
+    }
+    param_test7 = {
+        'n_estimators': [1000,2000,3000,4000,5000]
+    }
+
+    param_set = [
+        param_test1,
+        # param_test2,
+        # param_test3,
+        # param_test4,
+        # param_test5,
+        # param_test6,
+        # param_test7
+    ]
+
+    param_dict = {
+        "objective": "binary",
+        "metric": {'auc'},
+        "boosting_type": "gbdt",
+        "verbosity": -1,
+        "num_threads": 4,
+        "bagging_fraction": 0.8,
+        "feature_fraction": 0.8,
+        "learning_rate": 0.1,
+        "num_leaves": 31,
+        "verbose": -1,
+        "min_split_gain": .1,
+        "reg_alpha": .1,
+
+        "device": "gpu",
+        "gpu_platform_id": 0,
+        "gpu_device_id": 0,
+        "max_bin": 63
+    }
+    train_r = train.drop(class_names,axis=1)
+
+    for param in param_set:
+        with timer("goto serch max_depth and min_child_wight"):
+            best_param = h_tuning_lgb(train, train_target['toxic'],param_dict, param)
+
+        for key in param_dict:
+            for key2 in best_param:
+                if key == key2:
+                    param_dict[key] = best_param[key2]
+                    print ("change %s to %d" % (key, best_param[key2]))
+
+    return
+
+
 def app_stack():
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
     class_names_oof = []
@@ -1055,59 +1139,35 @@ def h_tuning_xgb(train, train_target,tune_dict, param_test):
         return gsearch.best_params_
 
 
-def app_single_lgb(csr_trn, csr_sub, train, test, feature_type):
+def h_tuning_lgb(train, train_target,tune_dict, param_test):
 
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-    train_target = train[class_names]
-    train_r = csr_trn
-    params = {
-        "objective": "binary",
-        "metric": {'auc'},
-        "boosting_type": "gbdt",
-        "verbosity": -1,
-        "num_threads": 4,
-        "bagging_fraction": 0.8,
-        "feature_fraction": 0.8,
-        "learning_rate": 0.1,
-        "num_leaves": 31,
-        "verbose": -1,
-        "min_split_gain": .1,
-        "reg_alpha": .1,
-        "device": "gpu",
-        "gpu_platform_id": 0,
-        "gpu_device_id": 0,
-        "max_bin": 63
-    }
-    param_test1 = {
-        'num_leaves':[ i for i in range(28, 32)],
-    }
-    param_test = param_test1
 
-    gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective=params["objective"], metric=params["metric"],
-                            verbosity=params["verbosity"],
-                            num_threads = params["num_threads"],
+    params = tune_dict
+
+    gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
+                            num_threads = 4,
+                            num_leaves = params["num_leaves"],
                             bagging_fraction= params["bagging_fraction"],
                             feature_fraction = params["feature_fraction"],
                             learning_rate =params["learning_rate"],
-                            num_leaves = params["num_leaves"],
                             verbose = params["verbose"],
                             min_split_gain = params["min_split_gain"],
                             reg_alpha=params["reg_alpha"],
-                            device = params["device"],
-                            gpu_platform_id=params["gpu_platform_id"],
-                            gpu_device_id = params["gpu_device_id"],
-                            max_bin=params["max_bin"]
+                            device = 'gpu',
+                            gpu_platform_id=0,
+                            gpu_device_id = 0,
+                            max_bin=63
                             ) ,
                             param_grid=param_test, scoring='roc_auc', n_jobs=1, iid=False, cv=3, verbose=2)
 
-
     with timer("goto tuning lgb_wight"):
-        gsearch.fit(train_r, train_target['toxic'])
+        gsearch.fit(train, train_target)
         print (gsearch.grid_scores_ )
         print (gsearch.best_params_ )
         print (gsearch.best_score_)
 
-    return
+    return gsearch.best_params_
 
 
 def app_single_xgb(csr_trn, csr_sub, train, test, feature_type):
@@ -1593,6 +1653,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
+    app_tune_stack()
     # app_stack()
 
     # print ("goto glove nbsvm")
@@ -1601,14 +1662,14 @@ if __name__ == '__main__':
     # print ("goto tfidf")
     # app_lbg(train, test)
 
-    model_type = 'capgru' # gru lstm capgru
-    feature_type = 'glove'
-    if feature_type == 'glove':
-        embedding_path = glove_embedding_path
-    elif feature_type == 'fast':
-        embedding_path = fasttext_embedding_path
-    print ("go to ", feature_type, model_type)
-    app_rnn(train, test, embedding_path, feature_type, model_type)
+    # model_type = 'capgru' # gru lstm capgru
+    # feature_type = 'glove'
+    # if feature_type == 'glove':
+    #     embedding_path = glove_embedding_path
+    # elif feature_type == 'fast':
+    #     embedding_path = fasttext_embedding_path
+    # print ("go to ", feature_type, model_type)
+    # app_rnn(train, test, embedding_path, feature_type, model_type)
 
     # print ("goto tfidf rnn")
     # model_type = 'gru'
