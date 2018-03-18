@@ -816,14 +816,14 @@ def app_tune_stack():
     }
 
     param_set = [
-        # param_test1,
-        # param_test2,
+        param_test1,
+        param_test2,
         # param_test3,
         # param_test4,
         # param_test5,
         # param_test6,
         # param_test7,
-        param_test8,
+        # param_test8,
     ]
 
     param_dict = {
@@ -870,6 +870,7 @@ def app_tune_stack():
         with timer("goto serching ... ... "):
             best_param = h_tuning_lgb(train_r, train_target['toxic'],param_dict, param)
 
+        # time.sleep(5)
         print (type(best_param))
         for key in param_dict:
             for key2 in best_param:
@@ -877,7 +878,7 @@ def app_tune_stack():
                     param_dict[key] = best_param[key2]
                     print ("change %s to %f" % (key, best_param[key2]))
 
-    # print (param_dict)
+    print (param_dict)
 
     return
 
@@ -1243,9 +1244,9 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
                             min_split_gain = params["min_split_gain"],
                             reg_alpha=params["reg_alpha"],
                             reg_lambda=params["reg_lambda"],
-                            device = 'gpu',
-                            gpu_platform_id=0,
-                            gpu_device_id = 0,
+                            # device = 'gpu',
+                            # gpu_platform_id=0,
+                            # gpu_device_id = 0,
                             ) ,
                             param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=1)
 
@@ -1749,8 +1750,8 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # app_tune_stack()
-    app_stack()
+    app_tune_stack()
+    # app_stack()
 
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
