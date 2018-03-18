@@ -54,7 +54,7 @@ from contextlib import contextmanager
 
 from collections import defaultdict
 
-# import lightgbm as lgb
+import lightgbm as lgb
 import xgboost as xgb
 from xgboost.sklearn import XGBClassifier
 
@@ -786,8 +786,9 @@ def app_tune_stack():
     train_target = train[class_names]
 
     param_test1 = {
-        'max_depth': [4,5 ,6],
-        'num_leaves': [i for i in range(9, 21)]
+        'max_depth': [-1, 3, 4, 5],
+        #'num_leaves': [i for i in range(6,16)]
+        'num_leaves': [6, 9, 12, 15]
     }
     param_test2 = {
         'gamma': [i / 10.0 for i in range(0, 5)]
@@ -824,32 +825,54 @@ def app_tune_stack():
         "objective": "binary",
         "metric": {'auc'},
         "boosting_type": "gbdt",
-        "verbosity": -1,
         "num_threads": 4,
-        "bagging_fraction": 0.8,
-        "feature_fraction": 0.8,
-        "learning_rate": 0.1,
-        "num_leaves": 31,
-        "verbose": -1,
-        "min_split_gain": .1,
-        "reg_alpha": .1,
 
+        "num_leaves": 31,
+        "max_depth": -1,
+
+        "feature_fraction": 1,
+        "min_data_in_leaf":20,
+        "min_sum_hessian_in_leaf":.001,
+        "learning_rate": 0.1,
+
+        "bagging_fraction": 1,
+        "bagging_freq":0,
+
+        "reg_alpha": 0,
+        "reg_lambda": 0,
+
+        "max_bin": 255,
+        "min_split_gain":.1,
+        "verbose": -1,
         "device": "gpu",
         "gpu_platform_id": 0,
         "gpu_device_id": 0,
-        "max_bin": 63
+        # num_leaves         default=31, type=int, alias=num_leaf
+        # max_depth          default=-1, type=int
+        # feature_fraction   default=1.0, type=double, 0.0 < feature_fraction < 1.0 alias=sub_feature, colsample_bytree
+        # min_data_in_leaf   default=20, type=int
+        # min_sum_hessian_in_leaf    default=1e-3, type=double
+        # learning_rate      default=0.1
+        # max_bin            default=255, type=int
+        # bagging_fraction   default=1.0, type=double, 0.0 < bagging_fraction < 1.0
+        # bagging_freq       default=0
+        # lambda_l1   default=0, type=double, alias=reg_alpha
+        # lambda_l2   default=0, type=double, alias=reg_lambda
     }
     train_r = train.drop(class_names,axis=1)
 
     for param in param_set:
-        with timer("goto serch max_depth and min_child_wight"):
-            best_param = h_tuning_lgb(train, train_target['toxic'],param_dict, param)
+        with timer("goto serching ... ... "):
+            best_param = h_tuning_lgb(train_r, train_target['toxic'],param_dict, param)
 
+        print (type(best_param))
         for key in param_dict:
             for key2 in best_param:
                 if key == key2:
                     param_dict[key] = best_param[key2]
                     print ("change %s to %d" % (key, best_param[key2]))
+
+    print (best_param)
 
     return
 
@@ -896,8 +919,8 @@ def app_stack():
         scores.append(np.mean(score))
         stacker.fit(X_train, Y_train[label])
         sub[label] = stacker.predict_proba(test)[:,1]
-        # trn_pred = stacker.predict_proba(X_valid)[:,1]
-        # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
+        #trn_pred = stacker.predict_proba(X_valid)[:,1]
+        #print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
     print("CV score:", np.mean(scores))
 
     out_file = 'output/submission_' + str(num_file) +'file.csv'
@@ -989,7 +1012,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
     test_text = test["comment_text"]
     train_text = train["comment_text"]
 
-    splits = 5
+    splits = 3
 
     max_len = 150
     max_features = 100000
@@ -1021,10 +1044,10 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
             if model_type == 'gru': # gru
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                #if os.path.exists(file_path):
-                #    model = load_model(file_path)
-                #else:
-                model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
                                     X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                     m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
                                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
@@ -1152,26 +1175,29 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 
     params = tune_dict
-
     gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
                             num_threads = 4,
                             num_leaves = params["num_leaves"],
-                            bagging_fraction= params["bagging_fraction"],
+                            max_depth =  params["max_depth"],
                             feature_fraction = params["feature_fraction"],
+                            min_data_in_leaf = params["min_data_in_leaf"],
+                            min_sum_hessian_in_leaf = params["min_sum_hessian_in_leaf"],
                             learning_rate =params["learning_rate"],
-                            verbose = params["verbose"],
+                            bagging_fraction= params["bagging_fraction"],
+                            bagging_freq = params["bagging_freq"],
+                            max_bin=params["max_bin"],
                             min_split_gain = params["min_split_gain"],
                             reg_alpha=params["reg_alpha"],
+                            reg_lambda=params["reg_lambda"],
                             device = 'gpu',
                             gpu_platform_id=0,
                             gpu_device_id = 0,
-                            max_bin=63
                             ) ,
-                            param_grid=param_test, scoring='roc_auc', n_jobs=1, iid=False, cv=3, verbose=2)
+                            param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=3, verbose=2)
 
     with timer("goto tuning lgb_wight"):
         gsearch.fit(train, train_target)
-        print (gsearch.grid_scores_ )
+        # print (gsearch.grid_scores_ )
         print (gsearch.best_params_ )
         print (gsearch.best_score_)
 
@@ -1669,7 +1695,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # app_tune_stack()
+    app_tune_stack()
     # app_stack()
 
     # print ("goto glove nbsvm")
@@ -1678,8 +1704,8 @@ if __name__ == '__main__':
     # print ("goto tfidf")
     # app_lbg(train, test)
 
-    # model_type = 'capgru' # gru lstm capgru
-    # feature_type = 'lstm'
+    # feature_type = 'glove'
+    # model_type = 'gru' # gru lstm capgru
     # if feature_type == 'glove':
     #     embedding_path = glove_embedding_path
     # elif feature_type == 'fast':
@@ -1687,10 +1713,28 @@ if __name__ == '__main__':
     # print ("go to ", feature_type, model_type)
     # app_rnn(train, test, embedding_path, feature_type, model_type)
 
-    print ("goto token rnn")
-    model_type = 'gru'
-    feature_type = 'token'
-    app_token_rnn(train, test, None, model_type, feature_type)
+    # feature_type = 'fast'
+    # model_type = 'gru' # gru lstm capgru
+    # if feature_type == 'glove':
+    #     embedding_path = glove_embedding_path
+    # elif feature_type == 'fast':
+    #     embedding_path = fasttext_embedding_path
+    # print ("go to ", feature_type, model_type)
+    # app_rnn(train, test, embedding_path, feature_type, model_type)
+
+    # feature_type = 'fast'
+    # model_type = 'lstm' # gru lstm capgru
+    # if feature_type == 'glove':
+    #     embedding_path = glove_embedding_path
+    # elif feature_type == 'fast':
+    #     embedding_path = fasttext_embedding_path
+    # print ("go to ", feature_type, model_type)
+    # app_rnn(train, test, embedding_path, feature_type, model_type)
+
+    # print ("goto token rnn")
+    # model_type = 'lstm'
+    # feature_type = 'token'
+    # app_token_rnn(train, test, None, model_type, feature_type)
     # app_token_lgb(train, test, model_type, feature_type)
 
     # app_glove_lgb (train, test,glove_embedding_path, feature_type, model_type)
