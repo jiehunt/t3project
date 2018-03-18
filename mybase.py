@@ -54,7 +54,7 @@ from contextlib import contextmanager
 
 from collections import defaultdict
 
-import lightgbm as lgb
+# import lightgbm as lgb
 import xgboost as xgb
 from xgboost.sklearn import XGBClassifier
 
@@ -93,10 +93,10 @@ def h_get_train_test_list():
 
    for f in oof_files:
        train_list.append(f)
+       oof_path = str(f).split('/')[0]
+       oof_file = str(f).split('/')[1]
        # oof_path = str(f).split('\\')[0]
        # oof_file = str(f).split('\\')[1]
-       oof_path = str(f).split('\\')[0]
-       oof_file = str(f).split('\\')[1]
        oof_test_pre = str(oof_file).split('oof')[0]
        test_file = str(oof_path) + '_test/'+str(oof_test_pre) + 'test_oof.csv'
        test_list.append(test_file)
@@ -989,7 +989,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
     test_text = test["comment_text"]
     train_text = train["comment_text"]
 
-    splits = 3
+    splits = 5
 
     max_len = 150
     max_features = 100000
@@ -1030,10 +1030,10 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
             elif model_type == 'lstm': # lstm
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                # if os.path.exists(file_path):
-                #     model = load_model(file_path)
-                # else:
-                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                if os.path.exists(file_path):
+                    model = load_model(file_path)
+                else:
+                    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
@@ -1050,6 +1050,12 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
             class_pred[val_idx] =pd.DataFrame(model.predict(X_valid_n))
 
+            if n_fold > 0:
+                pred = model.predict(test) + pred
+            else:
+                pred = model.predict(test)
+
+
         oof_names = ['toxic_oof', 'severe_toxic_oof', 'obscene_oof', 'threat_oof', 'insult_oof', 'identity_hate_oof']
         class_pred = pd.DataFrame(class_pred)
         class_pred.columns = oof_names
@@ -1064,40 +1070,42 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
                                                                                index=False,
                                                                                float_format="%.8f")
 
-        X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
+        pred = pred / splits
+        pred =pd.DataFrame(pred)
+        pred.columns = class_names
+
+        # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1)
 
         # Use train for test
-        if model_type == 'gru': # gru
-            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
-            # if os.path.exists(file_path):
-            #     model = load_model(file_path)
-            # else:
-            model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
-                            X_valid, Y_valid, train_r,  train_target, file_path,
-                            m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
-                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
-        elif model_type == 'lstm': # lstm
-            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
-            # if os.path.exists(file_path):
-            #     model = load_model(file_path)
-            # else:
-            model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
-                            X_valid, Y_valid, train_r,  train_target, file_path,
-                            m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
-                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
-        elif model_type == 'capgru': # lstm
-            file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
-            # if os.path.exists(file_path):
-            #     model = load_model(file_path)
-            # else:
-            model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
-                            X_valid, Y_valid, train_r,  train_target, file_path,
-                            m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
-                            m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+        # if model_type == 'gru': # gru
+        #     file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
+        #     # if os.path.exists(file_path):
+        #     #     model = load_model(file_path)
+        #     # else:
+        #     model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+        #                     X_valid, Y_valid, train_r,  train_target, file_path,
+        #                     m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
+        #                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+        # elif model_type == 'lstm': # lstm
+        #     file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
+        #     # if os.path.exists(file_path):
+        #     #     model = load_model(file_path)
+        #     # else:
+        #     model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+        #                     X_valid, Y_valid, train_r,  train_target, file_path,
+        #                     m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+        #                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
+        # elif model_type == 'capgru': # lstm
+        #     file_path = './model/'+str(model_type) + '_'+ str(feature_type) + 'full' + '.hdf5'
+        #     # if os.path.exists(file_path):
+        #     #     model = load_model(file_path)
+        #     # else:
+        #     model = m_capsule_gru_model(max_len, max_features, embed_size, embedding_matrix,
+        #                     X_valid, Y_valid, train_r,  train_target, file_path,
+        #                     m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
+        #                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
 
 
-        pred =pd.DataFrame(model.predict(test))
-        pred.columns = class_names
 
     return pred
 
@@ -1653,7 +1661,7 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    app_tune_stack()
+    # app_tune_stack()
     # app_stack()
 
     # print ("goto glove nbsvm")
@@ -1662,14 +1670,14 @@ if __name__ == '__main__':
     # print ("goto tfidf")
     # app_lbg(train, test)
 
-    # model_type = 'capgru' # gru lstm capgru
-    # feature_type = 'glove'
-    # if feature_type == 'glove':
-    #     embedding_path = glove_embedding_path
-    # elif feature_type == 'fast':
-    #     embedding_path = fasttext_embedding_path
-    # print ("go to ", feature_type, model_type)
-    # app_rnn(train, test, embedding_path, feature_type, model_type)
+    model_type = 'capgru' # gru lstm capgru
+    feature_type = 'lstm'
+    if feature_type == 'glove':
+        embedding_path = glove_embedding_path
+    elif feature_type == 'fast':
+        embedding_path = fasttext_embedding_path
+    print ("go to ", feature_type, model_type)
+    app_rnn(train, test, embedding_path, feature_type, model_type)
 
     # print ("goto tfidf rnn")
     # model_type = 'gru'
