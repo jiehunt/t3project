@@ -651,6 +651,7 @@ def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
         "gpu_device_id": 0,
         "max_bin": 63
     }
+    splits = 5
     # print (type(train)) frame.DataFrame
 
     # Now go through folds
@@ -658,11 +659,13 @@ def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
     # https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge/discussion/49964
     with timer("Scoring Light GBM"):
         scores = []
-        folds = StratifiedKFold(n_splits=4, shuffle=True, random_state=1)
+        folds = StratifiedKFold(n_splits=splits, shuffle=True, random_state=1)
         lgb_round_dict = defaultdict(int)
         trn_lgbset = lgb.Dataset(csr_trn, free_raw_data=False)
         # del csr_trn
         # gc.collect()
+
+        pred = np.zeros( shape=(len(test), len(class_names)) )
 
         for class_name in class_names:
             print("Class %s scores : " % class_name)
@@ -688,6 +691,7 @@ def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
                 )
                 class_pred[val_idx] = model.predict(trn_lgbset.data[val_idx], num_iteration=model.best_iteration)
                 score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
+                pred[class_name] += model.predict(csr_sub, num_iteration=model.best_iteration)
 
                 # Compute mean rounds over folds for each class
                 # So that it can be re-used for test predictions
@@ -706,22 +710,22 @@ def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
 
         print('Total CV score is {}'.format(np.mean(scores)))
 
-        pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred = pred/splits
         pred =pd.DataFrame(pred)
         pred.columns = class_names
-        with timer("Predicting probabilities"):
-            # Go through all classes and reuse computed number of rounds for each class
-            for class_name in class_names:
-                with timer("Predicting probabilities for %s" % class_name):
-                    train_target = train[class_name]
-                    trn_lgbset.set_label(train_target.values)
-                    # Train lgb
-                    model = lgb.train(
-                        params=params,
-                        train_set=trn_lgbset,
-                        num_boost_round=int(lgb_round_dict[class_name] / folds.n_splits)
-                    )
-                    pred[class_name] = model.predict(csr_sub, num_iteration=model.best_iteration)
+        # with timer("Predicting probabilities"):
+        #     # Go through all classes and reuse computed number of rounds for each class
+        #     for class_name in class_names:
+        #         with timer("Predicting probabilities for %s" % class_name):
+        #             train_target = train[class_name]
+        #             trn_lgbset.set_label(train_target.values)
+        #             # Train lgb
+        #             model = lgb.train(
+        #                 params=params,
+        #                 train_set=trn_lgbset,
+        #                 num_boost_round=int(lgb_round_dict[class_name] / folds.n_splits)
+        #             )
+        #             pred[class_name] = model.predict(csr_sub, num_iteration=model.best_iteration)
 
         return pred
 
@@ -954,7 +958,7 @@ def app_stack():
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
 
-    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # for class_name in class_names:
     #     y_target = Y_train[class_name]
     #     stacker.fit(X_train, y=y_target)
@@ -994,13 +998,14 @@ def m_make_single_submission(m_infile, m_outfile, m_pred):
 def app_train_nbsvm(csr_trn, csr_sub,train, test, feature_type):
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 
-    n_splits = 4
+    n_splits = 5
     model_type = 'nbsvm'
     with timer("Scoring nbsvm"):
         scores = []
         folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
         nbsvm_round_dict = defaultdict(int)
 
+        pred = np.zeros( shape=(len(test), len(class_names)) )
         for class_name in class_names:
             print("Class %s scores : " % class_name)
             class_pred = np.zeros(len(train))
@@ -1022,6 +1027,7 @@ def app_train_nbsvm(csr_trn, csr_sub,train, test, feature_type):
                 class_pred[val_idx] = model.predict_proba(csr_trn[val_idx])[:,1]
                 # class_pred[val_idx] = model.predict_proba(csr_trn[val_idx].multiply(r))[:,1]
                 score = roc_auc_score(train_target[val_idx], class_pred[val_idx])
+                pred[class_name] += model.predict_proba(csr_sub)[:,1]
 
                 # Compute mean rounds over folds for each class
                 # So that it can be re-used for test predictions
@@ -1040,23 +1046,24 @@ def app_train_nbsvm(csr_trn, csr_sub,train, test, feature_type):
         print('Total CV score is {}'.format(np.mean(scores)))
 
         # Use train for test
-        pred = np.zeros( shape=(len(test), len(class_names)) )
+        # pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred = pred / n_splits
         pred =pd.DataFrame(pred)
         pred.columns = class_names
 #
-        with timer("Predicting test probabilities"):
-            # Go through all classes and reuse computed number of rounds for each class
-            for class_name in class_names:
-                with timer("Predicting probabilities for %s" % class_name):
-                    train_target = train[class_name]
-                    # Train xgb
-                    # model, r = m_nbsvm_model(csr_trn, train_target)
-                    model = my_nbsvm()
-                    model.fit(csr_trn, train_target)
-                    file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(class_name) + 'full.model'
-                    # model.dump_modle(file_path)
-                    # pred[class_name] = model.predict_proba(csr_sub.multiply(r))[:,1]
-                    pred[class_name] = model.predict_proba(csr_sub)[:,1]
+        # with timer("Predicting test probabilities"):
+        #     # Go through all classes and reuse computed number of rounds for each class
+        #     for class_name in class_names:
+        #         with timer("Predicting probabilities for %s" % class_name):
+        #             train_target = train[class_name]
+        #             # Train xgb
+        #             # model, r = m_nbsvm_model(csr_trn, train_target)
+        #             model = my_nbsvm()
+        #             model.fit(csr_trn, train_target)
+        #             file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(class_name) + 'full.model'
+        #             # model.dump_modle(file_path)
+        #             # pred[class_name] = model.predict_proba(csr_sub.multiply(r))[:,1]
+        #             pred[class_name] = model.predict_proba(csr_sub)[:,1]
 
         return pred
 
@@ -1067,7 +1074,7 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
     test_text = test["comment_text"]
     train_text = train["comment_text"]
 
-    splits = 3
+    splits = 5
 
     max_len = 150
     max_features = 100000
@@ -1099,19 +1106,19 @@ def app_train_rnn(train, test, embedding_path, model_type, feature_type):
 
             if model_type == 'gru': # gru
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                if os.path.exists(file_path):
-                    model = load_model(file_path)
-                else:
-                    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                # if os.path.exists(file_path):
+                #     model = load_model(file_path)
+                # else:
+                model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
                                     X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                     m_trainable=False, lr=lr, lr_d = lr_d, units = units, dr = dr,
                                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
             elif model_type == 'lstm': # lstm
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                if os.path.exists(file_path):
-                    model = load_model(file_path)
-                else:
-                    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                # if os.path.exists(file_path):
+                #     model = load_model(file_path)
+                # else:
+                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=False, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
@@ -1465,7 +1472,7 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
-    model_type = 'xgboost'
+    model_type = 'lgb'
     feature_type = 'wtcs'
     if model_type == 'xgb':
         with timer ("get xgb model"):
@@ -1551,14 +1558,14 @@ def app_token_rnn(train, test, embedding_path, model_type, feature_type):
     test_text = test["comment_text"].fillna("jiehunt").values
     train_text = train["comment_text"].fillna("jiehunt").values
 
-    splits = 3
+    splits = 5
 
     max_len = 150
     max_features = 100000
     embed_size = 300
 
     m_batch_size = 32
-    m_epochs = 1
+    m_epochs = 2
     m_verbose = 1
     lr = 1e-3
     lr_d = 0
@@ -1596,19 +1603,19 @@ def app_token_rnn(train, test, embedding_path, model_type, feature_type):
 
             if model_type == 'gru': # gru
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                if os.path.exists(file_path):
-                    model = load_model(file_path)
-                else:
-                    model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
+                # if os.path.exists(file_path):
+                #     model = load_model(file_path)
+                # else:
+                model = m_gru_model(max_len, max_features, embed_size, embedding_matrix,
                                     X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                     m_trainable=m_trainable, lr=lr, lr_d = lr_d, units = units, dr = dr,
                                     m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
             elif model_type == 'lstm': # lstm
                 file_path = './model/'+str(model_type) +'_'+str(feature_type) + str(n_fold) + '.hdf5'
-                if os.path.exists(file_path):
-                    model = load_model(file_path)
-                else:
-                    model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
+                # if os.path.exists(file_path):
+                #     model = load_model(file_path)
+                # else:
+                model = m_lstm_model(max_len, max_features, embed_size, embedding_matrix,
                                 X_valid_n, Y_valid_n, X_train_n,  Y_train_n, file_path,
                                 m_trainable=True, lr = lr, lr_d = lr_d, units = units, dr = dr,
                                 m_batch_size= m_batch_size, m_epochs = m_epochs, m_verbose = m_verbose)
@@ -1750,14 +1757,14 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    app_tune_stack()
+    # app_tune_stack()
     # app_stack()
 
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
 
-    # print ("goto tfidf")
-    # app_lbg(train, test)
+    print ("goto tfidf")
+    app_lbg(train, test)
 
     # feature_type = 'glove'
     # model_type = 'gru' # gru lstm capgru
@@ -1787,7 +1794,7 @@ if __name__ == '__main__':
     # app_rnn(train, test, embedding_path, feature_type, model_type)
 
     # print ("goto token rnn")
-    # model_type = 'lstm'
+    # model_type = 'gru'
     # feature_type = 'token'
     # app_token_rnn(train, test, None, model_type, feature_type)
     # app_token_lgb(train, test, model_type, feature_type)
