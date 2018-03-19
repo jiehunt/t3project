@@ -26,6 +26,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_auc_score
+from sklearn.feature_selection import SelectFromModel
 
 from keras.preprocessing import text, sequence
 from keras.preprocessing.text import Tokenizer
@@ -684,6 +685,8 @@ def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
         # gc.collect()
 
         pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred =pd.DataFrame(pred)
+        pred.columns = class_names
 
         for class_name in class_names:
             print("Class %s scores : " % class_name)
@@ -729,8 +732,6 @@ def m_lgb_model(csr_trn, csr_sub, train, test, feature_type):
         print('Total CV score is {}'.format(np.mean(scores)))
 
         pred = pred/splits
-        pred =pd.DataFrame(pred)
-        pred.columns = class_names
         # with timer("Predicting probabilities"):
         #     # Go through all classes and reuse computed number of rounds for each class
         #     for class_name in class_names:
@@ -772,17 +773,17 @@ class my_nbsvm:
     def fit(self, X, y):
         y = y.values
         self.r = np.log(m_pr(X, 1,y) / m_pr(X, 0,y))
-        x_nb = np.multiply(X, self.r)
-        # x_nb = X.multiply(self.r)
+        # x_nb = np.multiply(X, self.r)
+        x_nb = X.multiply(self.r)
         return self.model.fit(x_nb, y)
 
     def predict(self, X):
-        return self.model.predict(np.multiply(X, self.r) )
-        # return self.model.predict(X.multiply(self.r))
+        # return self.model.predict(np.multiply(X, self.r) )
+        return self.model.predict(X.multiply(self.r))
 
     def predict_proba(self,X):
-        return self.model.predict_proba(np.multiply(X, self.r))
-        # return self.model.predict_proba(X.multiply(self.r))
+        # return self.model.predict_proba(np.multiply(X, self.r))
+        return self.model.predict_proba(X.multiply(self.r))
 
     def get_params(self, deep):
         return self.model.get_params(deep=deep)
@@ -808,9 +809,9 @@ def app_tune_stack():
     train_target = train[class_names]
 
     param_test1 = {
-        'max_depth': [4,5, 6,7,8 ],
+        'max_depth': [3,4, 5,6],
         #'num_leaves': [i for i in range(6,16)]
-        'num_leaves': [18, 20, 21, 22]
+        'num_leaves': [5,8, 10,15,18,20]
     }
     param_test2 = {
         'feature_fraction': [i / 10.0 for i in range(1, 10)]
@@ -839,7 +840,7 @@ def app_tune_stack():
 
     param_set = [
         param_test1,
-        param_test2,
+        # param_test2,
         # param_test3,
         # param_test4,
         # param_test5,
@@ -854,19 +855,19 @@ def app_tune_stack():
         "boosting_type": "gbdt",
         "num_threads": 4,
 
-        "num_leaves": 21,
-        "max_depth": 5,
+        "num_leaves": 20,
+        "max_depth": 6,
 
-        "feature_fraction": .1,
-        "min_data_in_leaf":22,
-        "min_sum_hessian_in_leaf":.004,
+        "feature_fraction": .4,
+        "min_data_in_leaf":24,
+        "min_sum_hessian_in_leaf":.001,
         "learning_rate": 0.5,
 
-        "bagging_fraction": .8,
+        "bagging_fraction": .1,
         "bagging_freq":0,
 
-        "reg_alpha": .9,
-        "reg_lambda": .8,
+        "reg_alpha": .8,
+        "reg_lambda": .7,
 
         "max_bin": 24,
         "min_split_gain":.3,
@@ -888,17 +889,23 @@ def app_tune_stack():
     }
     train_r = train.drop(class_names,axis=1)
 
-    for param in param_set:
-        with timer("goto serching ... ... "):
-            best_param = h_tuning_lgb(train_r, train_target['toxic'],param_dict, param)
+    with timer ("Serching for best "):
+        bscores = []
+        for param in param_set:
+            with timer("goto serching ... ... "):
+                score , best_param = h_tuning_lgb(train_r, train_target['toxic'],param_dict, param)
 
-        # time.sleep(5)
-        print (type(best_param))
-        for key in param_dict:
-            for key2 in best_param:
-                if key == key2:
-                    param_dict[key] = best_param[key2]
-                    print ("change %s to %f" % (key, best_param[key2]))
+            # time.sleep(5)
+            print (type(best_param))
+            for key in param_dict:
+                for key2 in best_param:
+                    if key == key2:
+                        param_dict[key] = best_param[key2]
+                        print ("change %s to %f" % (key, best_param[key2]))
+
+            one_scroe = {'score':score, 'param':param_dict}
+            bscores.append(one_scroe)
+
 
     print (param_dict)
 
@@ -1031,7 +1038,7 @@ def app_stack():
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
 
-    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
+    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # for class_name in class_names:
     #     y_target = Y_train[class_name]
     #     stacker.fit(X_train, y=y_target)
@@ -1079,6 +1086,9 @@ def app_train_nbsvm(csr_trn, csr_sub,train, test, feature_type):
         nbsvm_round_dict = defaultdict(int)
 
         pred = np.zeros( shape=(len(test), len(class_names)) )
+        pred =pd.DataFrame(pred)
+        pred.columns = class_names
+
         for class_name in class_names:
             print("Class %s scores : " % class_name)
             class_pred = np.zeros(len(train))
@@ -1121,8 +1131,6 @@ def app_train_nbsvm(csr_trn, csr_sub,train, test, feature_type):
         # Use train for test
         # pred = np.zeros( shape=(len(test), len(class_names)) )
         pred = pred / n_splits
-        pred =pd.DataFrame(pred)
-        pred.columns = class_names
 #
         # with timer("Predicting test probabilities"):
         #     # Go through all classes and reuse computed number of rounds for each class
@@ -1311,7 +1319,7 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
 
     params = tune_dict
     gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
-                            # num_threads = 4,
+                            num_threads = 4,
                             num_leaves = params["num_leaves"],
                             max_depth =  params["max_depth"],
                             feature_fraction = params["feature_fraction"],
@@ -1324,9 +1332,24 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
                             min_split_gain = params["min_split_gain"],
                             reg_alpha=params["reg_alpha"],
                             reg_lambda=params["reg_lambda"],
-                            # device = 'gpu',
-                            # gpu_platform_id=0,
-                            # gpu_device_id = 0,
+                            device = 'gpu',
+                            gpu_platform_id=0,
+                            gpu_device_id = 0,
+                            ) ,
+                            param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=1)
+
+    gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
+                            num_threads = 4,
+
+                            max_depth=3,
+                            n_estimators=125,
+                            num_leaves=10,
+                            learning_rate=0.1,
+                            colsample_bytree=0.45,
+                            reg_lambda=0.2,
+                            device = 'gpu',
+                            gpu_platform_id=0,
+                            gpu_device_id = 0,
                             ) ,
                             param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=1)
 
@@ -1336,7 +1359,7 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
         print (gsearch.best_params_ )
         print (gsearch.best_score_)
 
-    return gsearch.best_params_
+    return gsearch.best_score_, gsearch.best_params_
 
 
 def app_single_xgb(csr_trn, csr_sub, train, test, feature_type):
@@ -1545,7 +1568,7 @@ def app_lbg (train, test):
     drop_f = [f_ for f_ in train if f_ not in ["id"] + class_names]
     train.drop(drop_f, axis=1, inplace=True)
 
-    model_type = 'lgb'
+    model_type = 'nbsvm'
     feature_type = 'wtcs'
     if model_type == 'xgb':
         with timer ("get xgb model"):
@@ -1818,7 +1841,162 @@ def app_glove_lgb (train, test,embedding_path, feature_type, model_type):
 
     return
 
+def peter_bestk_lgb():
+    import gc
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 
+    train = pd.read_csv('./input/train.csv').fillna(' ')
+    test = pd.read_csv('./input/test.csv').fillna(' ')
+    print('Loaded')
+
+    train_text = train['comment_text']
+    test_text = test['comment_text']
+    all_text = pd.concat([train_text, test_text])
+
+    with timer("get the feature"):
+        word_vectorizer = TfidfVectorizer(
+            sublinear_tf=True,
+            strip_accents='unicode',
+            analyzer='word',
+            token_pattern=r'\w{1,}',
+            ngram_range=(1, 2),
+            max_features=50000)
+        word_vectorizer.fit(all_text)
+        print('Word TFIDF 1/3')
+        train_word_features = word_vectorizer.transform(train_text)
+        print('Word TFIDF 2/3')
+        test_word_features = word_vectorizer.transform(test_text)
+        print('Word TFIDF 3/3')
+
+        char_vectorizer = TfidfVectorizer(
+            sublinear_tf=True,
+            strip_accents='unicode',
+            analyzer='char',
+            stop_words='english',
+            ngram_range=(2, 6),
+            max_features=50000)
+        char_vectorizer.fit(all_text)
+        print('Char TFIDF 1/3')
+        train_char_features = char_vectorizer.transform(train_text)
+        print('Char TFIDF 2/3')
+        test_char_features = char_vectorizer.transform(test_text)
+        print('Char TFIDF 3/3')
+
+        train_features = hstack([train_char_features, train_word_features])
+        print('HStack 1/2')
+        test_features = hstack([test_char_features, test_word_features])
+        print('HStack 2/2')
+
+        submission = pd.DataFrame.from_dict({'id': test['id']})
+
+        train.drop('comment_text', axis=1, inplace=True)
+        del train_text
+        del test_text
+        del all_text
+        del train_char_features
+        del test_char_features
+        del train_word_features
+        del test_word_features
+        gc.collect()
+
+    splits = 4
+    params = {'learning_rate': 0.2,
+              'application': 'binary',
+              'num_leaves': 31,
+              'verbosity': -1,
+              'metric': 'auc',
+              'data_random_seed': 2,
+              'bagging_fraction': 0.8,
+              'feature_fraction': 0.6,
+              'nthread': 4,
+              'lambda_l1': 1,
+              'lambda_l2': 1,
+              "device": "gpu",
+              "gpu_platform_id": 0,
+              "gpu_device_id": 0,
+              "max_bin": 63
+              }
+    rounds_lookup = {'toxic': 140,
+                 'severe_toxic': 50,
+                 'obscene': 80,
+                 'threat': 80,
+                 'insult': 70,
+                 'identity_hate': 80}
+    folds = StratifiedKFold(n_splits=splits, shuffle=True, random_state=1)
+
+    pred = np.zeros( shape=(len(test), len(class_names)) )
+    pred =pd.DataFrame(pred)
+    pred.columns = class_names
+
+    scores = []
+
+    for class_name in class_names:
+        print(class_name)
+        train_target = train[class_name]
+        model = LogisticRegression(solver='sag')
+        sfm = SelectFromModel(model, threshold=0.2)
+        print(train_features.shape)
+        train_sparse_matrix = sfm.fit_transform(train_features, train_target)
+        test_sparse_matrix = sfm.transform(test_features)
+        print(train_sparse_matrix.shape)
+        class_pred = np.zeros(len(train))
+        # train_sparse_matrix, valid_sparse_matrix, y_train, y_valid = train_test_split(train_sparse_matrix, train_target, test_size=0.05, random_state=144)
+
+        with timer("train one class "):
+
+            for n_fold, (trn_idx, val_idx) in enumerate(folds.split(train, train_target)):
+                params = {'learning_rate': 0.2,
+                  'application': 'binary',
+                  'num_leaves': 31,
+                  'verbosity': -1,
+                  'metric': 'auc',
+                  'data_random_seed': 2,
+                  'bagging_fraction': 0.8,
+                  'feature_fraction': 0.6,
+                  'nthread': 4,
+                  'lambda_l1': 1,
+                  'lambda_l2': 1,
+                  "device": "gpu",
+                  "gpu_platform_id": 0,
+                  "gpu_device_id": 0,
+                  "max_bin": 63
+                }
+                d_train = lgb.Dataset(train_sparse_matrix[trn_idx], label=train_target[trn_idx])
+                d_valid = lgb.Dataset(train_sparse_matrix[val_idx], label=train_target[val_idx])
+                watchlist = [d_train, d_valid]
+                model = lgb.train(params,
+                          train_set=d_train,
+                          # num_boost_round=rounds_lookup[class_name],
+                          num_boost_round=500,
+                          valid_sets=watchlist,
+                          early_stopping_rounds=50,
+                          verbose_eval=50)
+
+                class_pred[val_idx] = model.predict(train_sparse_matrix[val_idx], num_iteration=model.best_iteration)
+                score = roc_auc_score(train_target.values[val_idx], class_pred[val_idx])
+                if n_fold > 0:
+                    pred[class_name] += model.predict(test_sparse_matrix)
+                else :
+                    pred[class_name]  = model.predict(test_sparse_matrix)
+
+                print("\t Fold %d : %.6f in %3d rounds" % (n_fold + 1, score, model.best_iteration))
+
+            scores.append(roc_auc_score(train_target, class_pred))
+            print("full score : %.6f" % roc_auc_score(train_target, class_pred))
+            train[class_name + "_oof"] = class_pred
+
+    file_name = 'oof/'+ 'bestK_'+'tfidf' + '_oof.csv'
+    train[["id"] + class_names + [f + "_oof" for f in class_names]].to_csv(file_name,
+                                                        index=False, float_format="%.8f")
+
+    print('Total CV score is {}'.format(np.mean(scores)))
+
+    pred = pred/splits
+
+    m_infile = './input/sample_submission.csv'
+    m_outfile = './oof_test/' + 'bestK_' + 'tfidf'+ '_test_oof.csv'
+    m_make_single_submission(m_infile, m_outfile, pred)
+    return
 
 if __name__ == '__main__':
     train = pd.read_csv('./input/train.csv').fillna(' ')
@@ -1831,9 +2009,10 @@ if __name__ == '__main__':
     test["comment_text"].fillna("no comment")
 
     # app_tune_stack()
-    app_rank()
+    # app_rank()
     # app_stack()
 
+    peter_bestk_lgb()
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
 
