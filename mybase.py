@@ -913,11 +913,11 @@ def app_tune_stack():
     X_train = train_r
     Y_train = train_target
     with timer ("Serching for best "):
-        for i in range(0,3):
+        for i in range(0,2):
             bscores = []
             for param in param_set:
                 with timer("goto serching ... ... "):
-                    score , best_param = h_tuning_lgb(X_train, Y_train['toxic'],param_dict, param)
+                    score , best_param = h_tuning_lgb(X_train, Y_train['severe_toxic'],param_dict, param)
 
                 # time.sleep(5)
                 print (type(best_param))
@@ -1037,13 +1037,13 @@ def app_stack():
 
     # stacker = LogisticRegression()
     # stacker = xgb.XGBClassifier()
-    stacker = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=13, boosting_type="gbdt",
-                                 learning_rate=0.1,  colsample_bytree=0.41,reg_lambda=0.5,
-                            device = 'gpu',
-                            gpu_platform_id=0,
-                            gpu_device_id = 0,)
-    # stacker = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
-    #                              learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,
+    # stacker = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=9, boosting_type="gbdt",
+    #                              learning_rate=0.1,  colsample_bytree=0.41,reg_lambda=0.9,
+    #                         device = 'gpu',
+    #                         gpu_platform_id=0,
+    #                         gpu_device_id = 0,)
+    stacker = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
                                  # feature_fraction=0.45,bagging_fraction=0.8, bagging_freq=5,  verbose=-1)
     # stacker = lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
     #                         num_threads = 4,
@@ -1067,7 +1067,7 @@ def app_stack():
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
 
-    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
+    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # for class_name in class_names:
     #     y_target = Y_train[class_name]
     #     stacker.fit(X_train, y=y_target)
@@ -1077,8 +1077,8 @@ def app_stack():
     #     sub[class_name] = stacker.predict_proba(test)[:,1]
 
     # Fit and submit
-    # X_train = train_r
-    # Y_train = train_target
+    X_train = train_r
+    Y_train = train_target
     scores = []
     for label in class_names:
         print(label)
@@ -1087,12 +1087,12 @@ def app_stack():
         scores.append(np.mean(score))
         stacker.fit(X_train, Y_train[label])
         sub[label] = stacker.predict_proba(test)[:,1]
-        trn_pred = stacker.predict_proba(X_valid)[:,1]
-        print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
+        # trn_pred = stacker.predict_proba(X_valid)[:,1]
+        # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
     print("CV score:", np.mean(scores))
 
-    # out_file = 'output/submission_' + str(num_file) +'file.csv'
-    # sub.to_csv(out_file,index=False)
+    out_file = 'output/submission_' + str(num_file) +'file.csv'
+    sub.to_csv(out_file,index=False)
     return
 
 """"""""""""""""""""""""""""""
@@ -1368,7 +1368,7 @@ def h_tuning_lgb(train, train_target,tune_dict, param_test):
     #                         param_grid=param_test, scoring='roc_auc', n_jobs=4, iid=False, cv=5, verbose=1)
 
     gsearch = GridSearchCV(estimator=lgb.LGBMClassifier(boosting_type="gbdt", objective="binary", metric="auc",
-                            num_threads = 4,
+                            # num_threads = 4,
 
                             num_leaves = params["num_leaves"],
                             max_depth =  params["max_depth"],
