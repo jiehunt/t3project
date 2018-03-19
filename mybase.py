@@ -12,6 +12,7 @@ import glob
 
 from scipy.sparse import hstack
 from scipy.sparse import csr_matrix
+from scipy.stats  import rankdata
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
@@ -102,6 +103,23 @@ def h_get_train_test_list():
        test_list.append(test_file)
 
    return train_list, test_list
+
+def h_prepare_data_train_rank(file_list):
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    predict_list = []
+    for (n, f) in enumerate(file_list):
+        one_file = pd.read_csv(f)
+        one_file_n = one_file[class_names_oof]
+
+        one_file_n.columns = class_names
+        predict_list.append(one_file_n)
+
+    return predict_list
+
 
 def h_prepare_data_train(file_list):
     class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
@@ -884,6 +902,61 @@ def app_tune_stack():
 
     print (param_dict)
 
+    return
+
+def h_rank(predict_list):
+
+    predictions = np.zeros_like(predict_list[0])
+    for predict in predict_list:
+        for i in range(6):
+            predictions[:,i] = np.add( predictions[:,i], rankdata(predict.iloc[:,i])/predictions.shape[0] )
+
+    predictions /= len(predict_list)
+    return predictions
+
+def app_rank():
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    sub = pd.read_csv('./input/sample_submission.csv')
+
+    train_list, test_list =  h_get_train_test_list()
+    num_file = len(train_list)
+    print (num_file)
+
+    predict_list  =  h_prepare_data_train_rank(train_list)
+    predictions = h_rank(predict_list)
+    rank_df = pd.read_csv('input/train.csv')
+    rank_df[class_names] = predictions
+
+    train = h_prepare_data_train(train_list)
+    test = h_prepare_data_test(test_list)
+
+
+
+    # stacker = LogisticRegression()
+    # stacker = xgb.XGBClassifier()
+    # stacker = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+    #                              learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+    #                              # feature_fraction=0.45,bagging_fraction=0.8, bagging_freq=5,  verbose=-1)
+
+    train_r = train.drop(class_names,axis=1)
+    train_target = train[class_names]
+
+    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
+    X_train, X_valid, Y_train, Y_valid = train_test_split(rank_df, train_target, test_size = 0.1, random_state=1982)
+
+    # Fit and submit
+#     X_train = train_r
+#     Y_train = train_target
+#     scores = []
+    for label in class_names:
+         print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], X_valid[label])))
+
+#     out_file = 'output/submission_' + str(num_file) +'file.csv'
+#     sub.to_csv(out_file,index=False)
     return
 
 
@@ -1758,13 +1831,14 @@ if __name__ == '__main__':
     test["comment_text"].fillna("no comment")
 
     # app_tune_stack()
+    app_rank()
     # app_stack()
 
     # print ("goto glove nbsvm")
     # app_glove_nbsvm (train, test,glove_embedding_path, 'glove', 'nbsvm')
 
-    print ("goto tfidf")
-    app_lbg(train, test)
+    # print ("goto tfidf")
+    # app_lbg(train, test)
 
     # feature_type = 'glove'
     # model_type = 'gru' # gru lstm capgru
