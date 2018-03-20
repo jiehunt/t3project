@@ -931,7 +931,7 @@ def app_tune_stack():
                 one_scroe = {'score':score, 'param':param_dict}
                 bscores.append(one_scroe)
             pfile = 'param_'+str(class_name) + '.csv'
-            with open(pfile, 'wb') as f:
+            with open(pfile, 'w') as f:
                 w = csv.DictWriter(f, param_dict.keys())
                 w.writeheader()
                 w.writerow(param_dict)
@@ -2110,9 +2110,19 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    # app_tune_stack()
+    param_dict = {
+    "objective": "binary",
+    "metric": 'auc',
+    "boosting_type": "gbdt",
+    "num_threads": 4,
+
+    "num_leaves": 10,
+    "max_depth": 3,
+    }
+
+    app_tune_stack()
     # app_rank()
-    app_stack()
+    # app_stack()
 
     # peter_bestk_lgb()
     # print ("goto glove nbsvm")
