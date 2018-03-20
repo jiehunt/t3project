@@ -863,7 +863,7 @@ def app_tune_stack():
         # param_test8,
     ]
 
-    param_dict = {
+    param_dict_org= {
         "objective": "binary",
         "metric": {'auc'},
         "boosting_type": "gbdt",
@@ -915,6 +915,7 @@ def app_tune_stack():
     Y_train = train_target
     with timer ("Serching for best "):
         for class_name in class_names:
+            param_dict = param_dict_org
             bscores = []
             for param in param_set:
                 with timer("goto serching ... ... "):
@@ -1082,6 +1083,20 @@ def app_stack():
     #     sub[class_name] = stacker.predict_proba(test)[:,1]
 
     # Fit and submit
+    # X_train = train_r
+    # Y_train = train_target
+    scores = []
+    for label in class_names:
+        print(label)
+        score = cross_val_score(stacker, X_train, Y_train[label], cv=5, scoring='roc_auc',verbose=0)
+        print("AUC:", score)
+        scores.append(np.mean(score))
+        stacker.fit(X_train, Y_train[label])
+        sub[label] = stacker.predict_proba(test)[:,1]
+        trn_pred = stacker.predict_proba(X_valid)[:,1]
+        print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
+    print("CV score:", np.mean(scores))
+
     X_train = train_r
     Y_train = train_target
     scores = []
@@ -1122,19 +1137,19 @@ def app_stack_2():
     #                         device = 'gpu',
     #                         gpu_platform_id=0,
     #                         gpu_device_id = 0,)
-    stacker_toxic = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
-                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+    stacker_toxic = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.51,reg_lambda=0.2,)
 
-    stacker_stoxic = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=14, boosting_type="gbdt",
-                                  learning_rate=0.05,  colsample_bytree=0.41,reg_lambda=0.2,)
-    stacker_obscene = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
-                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
-    stacker_threat = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
-                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
-    stacker_insult = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
-                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
-    stacker_ih = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
-                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+    stacker_stoxic = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=8, boosting_type="gbdt",
+                                  learning_rate=0.05,  colsample_bytree=0.26,reg_lambda=0.9,)
+    stacker_obscene = lgb.LGBMClassifier(max_depth=5, metric="auc", n_estimators=125, num_leaves=14, boosting_type="gbdt",
+                                  learning_rate=0.05,  colsample_bytree=0.31,reg_lambda=0.1,)
+    stacker_threat = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=8, boosting_type="gbdt",
+                                  learning_rate=0.05,  colsample_bytree=0.31,reg_lambda=0.2,)
+    stacker_insult = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=12, boosting_type="gbdt",
+                                  learning_rate=0.05,  colsample_bytree=0.31,reg_lambda=0.2,)
+    stacker_ih = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=8, boosting_type="gbdt",
+                                  learning_rate=0.05,  colsample_bytree=0.46,reg_lambda=0.7,)
 
     stacker_dict = {
         'toxic': stacker_toxic,
@@ -1149,6 +1164,7 @@ def app_stack_2():
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
 
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # Fit and submit
     X_train = train_r
     Y_train = train_target
@@ -1160,10 +1176,11 @@ def app_stack_2():
         scores.append(np.mean(score))
         stacker_dict[label].fit(X_train, Y_train[label])
         sub[label] = stacker_dict[label].predict_proba(test)[:,1]
-        # trn_pred = stacker.predict_proba(X_valid)[:,1]
+        # trn_pred = stacker_dict[label].predict_proba(X_valid)[:,1]
         # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
     print("CV score:", np.mean(scores))
 
+    print (num_file)
     out_file = 'output/submission_' + str(num_file) +'file.csv'
     sub.to_csv(out_file,index=False)
     return
@@ -2110,19 +2127,10 @@ if __name__ == '__main__':
     train["comment_text"].fillna("no comment")
     test["comment_text"].fillna("no comment")
 
-    param_dict = {
-    "objective": "binary",
-    "metric": 'auc',
-    "boosting_type": "gbdt",
-    "num_threads": 4,
-
-    "num_leaves": 10,
-    "max_depth": 3,
-    }
-
     app_tune_stack()
     # app_rank()
     # app_stack()
+    # app_stack_2()
 
     # peter_bestk_lgb()
     # print ("goto glove nbsvm")
