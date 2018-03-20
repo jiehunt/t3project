@@ -59,6 +59,7 @@ from collections import defaultdict
 import lightgbm as lgb
 import xgboost as xgb
 from xgboost.sklearn import XGBClassifier
+import csv
 
 """"""""""""""""""""""""""""""
 # system setting
@@ -809,7 +810,7 @@ def app_tune_stack():
     train_target = train[class_names]
 
     param_test1 = {
-        'max_depth': [3,4, 5,6],
+        'max_depth': [3,4, 5],
         #'num_leaves': [i for i in range(6,16)]
         'num_leaves': [5,8, 10,15,18,20]
     }
@@ -839,8 +840,8 @@ def app_tune_stack():
     }
 
     param_test1 = {
-        'max_depth': [3,4, 5,6],
-        'num_leaves': [i for i in range(6,16)]
+        'max_depth': [3,4, 5],
+        'num_leaves': [i for i in range(8,16, 2)]
     }
     param_test2 = {
         'learning_rate': [0.01, 0.05, 0.1,0.5,0.6, 0.8],
@@ -913,11 +914,11 @@ def app_tune_stack():
     X_train = train_r
     Y_train = train_target
     with timer ("Serching for best "):
-        for i in range(0,2):
+        for class_name in class_names:
             bscores = []
             for param in param_set:
                 with timer("goto serching ... ... "):
-                    score , best_param = h_tuning_lgb(X_train, Y_train['severe_toxic'],param_dict, param)
+                    score , best_param = h_tuning_lgb(X_train, Y_train[class_name],param_dict, param)
 
                 # time.sleep(5)
                 print (type(best_param))
@@ -929,7 +930,11 @@ def app_tune_stack():
 
                 one_scroe = {'score':score, 'param':param_dict}
                 bscores.append(one_scroe)
-
+            pfile = 'param_'+str(class_name) + '.csv'
+            with open(pfile, 'wb') as f:
+                w = csv.DictWriter(f, one_scroe.keys())
+                w.writeheader()
+                w.writerow(one_scroe)
 
     print (param_dict)
 
@@ -1067,7 +1072,7 @@ def app_stack():
     train_r = train.drop(class_names,axis=1)
     train_target = train[class_names]
 
-    # X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
+    X_train, X_valid, Y_train, Y_valid = train_test_split(train_r, train_target, test_size = 0.1, random_state=1982)
     # for class_name in class_names:
     #     y_target = Y_train[class_name]
     #     stacker.fit(X_train, y=y_target)
@@ -1087,6 +1092,74 @@ def app_stack():
         scores.append(np.mean(score))
         stacker.fit(X_train, Y_train[label])
         sub[label] = stacker.predict_proba(test)[:,1]
+        # trn_pred = stacker.predict_proba(X_valid)[:,1]
+        # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
+    print("CV score:", np.mean(scores))
+
+    # out_file = 'output/submission_' + str(num_file) +'file.csv'
+    # sub.to_csv(out_file,index=False)
+    return
+
+
+def app_stack_2():
+    class_names = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    class_names_oof = []
+    for c in class_names:
+        class_names_oof.append(c+'_oof')
+
+    sub = pd.read_csv('./input/sample_submission.csv')
+
+    train_list, test_list =  h_get_train_test_list()
+    num_file = len(train_list)
+
+    train = h_prepare_data_train(train_list)
+    test = h_prepare_data_test(test_list)
+
+    # stacker = LogisticRegression()
+    # stacker = xgb.XGBClassifier()
+    # stacker = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=9, boosting_type="gbdt",
+    #                              learning_rate=0.1,  colsample_bytree=0.41,reg_lambda=0.9,
+    #                         device = 'gpu',
+    #                         gpu_platform_id=0,
+    #                         gpu_device_id = 0,)
+    stacker_toxic = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+
+    stacker_stoxic = lgb.LGBMClassifier(max_depth=4, metric="auc", n_estimators=125, num_leaves=14, boosting_type="gbdt",
+                                  learning_rate=0.05,  colsample_bytree=0.41,reg_lambda=0.2,)
+    stacker_obscene = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+    stacker_threat = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+    stacker_insult = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+    stacker_ih = lgb.LGBMClassifier(max_depth=3, metric="auc", n_estimators=125, num_leaves=10, boosting_type="gbdt",
+                                  learning_rate=0.1,  colsample_bytree=0.45,reg_lambda=0.2,)
+
+    stacker_dict = {
+        'toxic': stacker_toxic,
+        'severe_toxic': stacker_stoxic,
+        'obscene': stacker_obscene,
+        'threat':stacker_threat,
+        'insult':stacker_insult,
+        'identity_hate':stacker_ih
+        }
+
+
+    train_r = train.drop(class_names,axis=1)
+    train_target = train[class_names]
+
+    # Fit and submit
+    X_train = train_r
+    Y_train = train_target
+    scores = []
+    for label in class_names:
+        print(label)
+        score = cross_val_score(stacker_dict[label], X_train, Y_train[label], cv=5, scoring='roc_auc',verbose=0)
+        print("AUC:", score)
+        scores.append(np.mean(score))
+        stacker_dict[label].fit(X_train, Y_train[label])
+        sub[label] = stacker_dict[label].predict_proba(test)[:,1]
         # trn_pred = stacker.predict_proba(X_valid)[:,1]
         # print ("%s score : %f" % (str(label),  roc_auc_score(Y_valid[label], trn_pred)))
     print("CV score:", np.mean(scores))
